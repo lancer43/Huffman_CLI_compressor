@@ -1,0 +1,16 @@
+# Временные файлы Visual Studio 
+.vs/ 
+Debug/ 
+Release/ 
+x64/ 
+*.user 
+*.aps 
+*.suo 
+ 
+# Файлы тестов архиватора (тяжелые бинарники и тексты) 
+compressed.hf 
+decompressed.txt 
+*.egg 
+*.exe 
+*.pdf 
+*.txt 
