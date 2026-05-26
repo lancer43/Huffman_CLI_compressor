@@ -10,12 +10,14 @@
     Готова первая версия упаковки битов в файл compress_file_v1()
 
     СДЕЛАНО!!!!!!!! 
-    Требуется сделать соответствующий данному формату упаковки декомпрессор,
-    интерфейс для вызова компресса и декомпресса.
+    Требуется сделать соответствующий данному формату упаковки декомпрессор
 
+    СДЕЛАНО!!!!!!!!
     ДАЛЕЕ ЗАЛИВАЕМ НА git наш MVP
 
     Дополнительные фичи (перспективы проекта):
+    - сделать интерфейс для вызова компрессии/декомпрессии, и возможно анализа времени работы, коэффициента сжатия и т.д.
+
     - сделать вторую версию упаковки, чтобы вместо оверхеда 2кб из массива частот
     был оверхед из бинарной записи готового дерева хаффмана, сделать соответствующее
     этой упаковке алгоритм декомпресса
@@ -28,7 +30,7 @@ int main(void) {
     setlocale(LC_ALL, "Russian");
     printf("====== Проверка сжатия файла ======");
     
-    FILE* source = fopen("tailscale-ipn.exe", "rb");
+    FILE* source = fopen("warandpeace.txt", "rb");
     FILE* compressed_file = fopen("compressed.hf", "wb");
 
     if (source == NULL) {
@@ -40,7 +42,7 @@ int main(void) {
         return 1;
     }
 
-    printf("\n\nИсходный файл: tailscale-ipn.exe\nСжатый файл: compressed.hf\nРаспакованный файл: decompressed.txt");
+    printf("\n\nИсходный файл: warandpeace.txt\nСжатый файл: compressed.hf\nРаспакованный файл: decompressed.txt");
 
     printf("\n\nПодсчёт частоты каждого символа...");
     size_t freq_count[ASCII_ALP_SIZE] = { 0 };
@@ -104,7 +106,7 @@ int main(void) {
     fclose(compressed_file);
     fclose(decompressed_file);
 
-    source = fopen("tailscale-ipn.exe", "rb");
+    source = fopen("warandpeace.txt", "rb");
     decompressed_file = fopen("decompressed.txt", "rb");
 
     fseek(source, 0, SEEK_SET);
