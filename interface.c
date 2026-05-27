@@ -11,11 +11,16 @@
 #include <string.h>
 
 #define MAX_PATH_LEN 1024
+#define MAX_FORMAT_LEN 10
 
 enum {
 	exit,
 	run_compress,
 	run_decompress
+};
+
+enum {
+	huf_format_len = 3
 };
 
 static void greeting_user(void) {
@@ -34,6 +39,10 @@ static void show_menu(void) {
 
 }
 
+/*
+	@brief Ввод пути файла для сжатия/распаковки
+	@param input_path - строка для сохранения корректного пути
+*/
 static void enter_path(char* input_path) {
 	printf("\nПеретащите файл в консоль (или введите путь к файлу вручную): ");
 
@@ -41,6 +50,10 @@ static void enter_path(char* input_path) {
 		printf("\nОшибка записи пути к файлу. Повторите попытку.");
 		printf("\nПеретащите файл в консоль (или введите путь к файлу вручную): ");
 	};
+
+
+	// заменяем последний символ на конец строки
+	input_path[strcspn(input_path, "\n")] = '\0';
 
 	// очищаем файл от кавычек по бокам
 	char* quote_ptr = strchr(input_path, '\"');
@@ -50,10 +63,18 @@ static void enter_path(char* input_path) {
 		quote_ptr = strchr(input_path, '\"');
 	}
 
-	// заменяем последний символ на конец строки
-	input_path[strcspn(input_path, "\n")] = '\0';
+	char* slash = strchr(input_path, '\\');
+	while (slash != NULL) {
+		*slash = '/';
+		slash = strchr(input_path, '\\');
+	}
 }
 
+/*
+	@brief Функция полного цикла сжатия файла
+	@param input_path - путь сжимаемого файла
+	@param output_path - путь сжатого файла
+*/
 static void run_compress_file(const char* input_path, const char* output_path) {
 	FILE* source = fopen(input_path, "rb");
 	FILE* compressed_file = fopen(output_path, "wb");
@@ -92,6 +113,7 @@ static void run_compress_file(const char* input_path, const char* output_path) {
 	}
 	printf("\nТаблица кодов успешно заполнена!");
 
+	// [TODO]: это можно встроить в compress_file_v1()? по сути ее область ответственности
 	fseek(source, 0, SEEK_SET);
 
 	printf("\n\nСжимаем файл...");
@@ -103,9 +125,51 @@ static void run_compress_file(const char* input_path, const char* output_path) {
 
 	printf("\nФайл сжат успешно!");
 	printf("\n\nСжатый файл лежит по пути: %s", output_path);
+
+	fclose(source);
+	fclose(compressed_file);
 }
 
+static void run_decompress_file(const char* input_path, const char* output_path) {
+	FILE* compressed_file = fopen(input_path, "rb");
+	FILE* decompressed_file = fopen(output_path, "wb");
+
+	if (compressed_file == NULL) {
+		printf("\n\nОшибка открытия сжатого файла (для чтения)");
+		return;
+	}
+	if (decompressed_file == NULL) {
+		printf("[DEBUG] output_path: '%s'", output_path);
+		printf("\n\nОшибка открытия распакованного файла (для записи). Код: %d\n", errno);
+		perror(output_path);
+		return;
+	}
+
+	printf("\n\nРаспаковываем файл...");
+	int success = decompress_file_v1(compressed_file, decompressed_file);
+	if (!success) {
+		printf("\nОшибка распаковки файла");
+		return;
+	}
+	printf("\nФайл распакован успешно!");
+	printf("\n\nРаспакованный файл лежит по пути: %s", output_path);
+
+	fclose(compressed_file);
+	fclose(decompressed_file);
+}
+
+/*
+	@brief Функция подготовки пути для сжатого файла и его сжатие
+	@param input_path - путь исходного файла
+*/
 static void compress_interface(const char* input_path) {
+
+	// резервируем последние 3 символа под формат .huf
+	if (strlen(input_path) > MAX_PATH_LEN - huf_format_len) {
+		printf("\nОшибка: путь к файлу слишком длинный.");
+		return;
+	}
+
 	// создаём путь для записи сжатого файла
 	char output_path[MAX_PATH_LEN];
 
@@ -119,10 +183,38 @@ static void compress_interface(const char* input_path) {
 	}
 
 	formatter[1] = '\0';
-	strncat(formatter, "huf", 3);
+	strncat(formatter, "huf", huf_format_len);
 
 	// тут щас будем выделять память, таблицу все дела пупупу
 	run_compress_file(input_path, output_path);
+}
+
+static void decompress_interface(const char* input_path) {
+	char format[MAX_FORMAT_LEN];
+	printf("\nВведите формат файла для распаковки (без точки): ");
+	while (fgets(format, MAX_FORMAT_LEN, stdin) == NULL) {
+		printf("\nОшибка записи формата. Повторите попытку.");
+		printf("\nВведите формат файла для распаковки: ");
+	}
+
+	format[strcspn(format, "\n")] = '\0';
+
+	char output_path[MAX_PATH_LEN];
+	strncpy(output_path, input_path, MAX_PATH_LEN);
+
+	// 1 - под '\0'
+	if (strlen(output_path) - huf_format_len + strlen(format) + 1 > MAX_PATH_LEN) {
+		printf("\nОшибка: путь слишком длинный");
+		return;
+	}
+
+	char* formatter = strrchr(output_path, '.');
+	formatter[1] = '\0';
+
+	strncat(output_path, format, MAX_FORMAT_LEN);
+	printf("[DEBUG] Путь для распакованного файла: %s", output_path);
+
+	run_decompress_file(input_path, output_path);
 }
 
 void run_interface_huf(void) {
@@ -154,23 +246,21 @@ void run_interface_huf(void) {
 			
 			enter_path(path);
 
-			// резервируем последние 3 символа под формат .huf
-			if (strlen(path) > MAX_PATH_LEN - 3) {
-				printf("\nОшибка: путь к файлу слишком длинный.");
-				break;
-			}
+			
 
 			compress_interface(path);
 
 			break;
 		}
-		case run_decompress:
-			// заглушка
-			
-			
+		case run_decompress: {
+			char path[MAX_PATH_LEN];
+
+			enter_path(path);
+
+			decompress_interface(path);
 
 			break;
-		
+		}
 		case exit:
 			printf("\nВыход...");
 			flag = 1;
