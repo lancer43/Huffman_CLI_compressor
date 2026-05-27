@@ -127,8 +127,10 @@
     <ClCompile Include="compressor.c" />
     <ClCompile Include="decompressor.c" />
     <ClCompile Include="huffman_tree.c" />
+    <ClCompile Include="interface.c" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="interface.h" />
     <ClInclude Include="huffman_tree.h" />
     <ClInclude Include="compressor.h" />
     <ClInclude Include="decompressor.h" />

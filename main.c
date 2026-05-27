@@ -1,9 +1,6 @@
 #define _CRT_SECURE_NO_WARNINGS
 
-#include "compressor.h"
-#include "decompressor.h"
-#include <stdio.h>
-#include <errno.h>
+#include "interface.h"
 #include <locale.h>
 
 /*
@@ -26,7 +23,7 @@
     на соответствие исходник == распакованный
 */
 
-int main(void) {
+/* бывший main (пока пусть тут полежит)
     setlocale(LC_ALL, "Russian");
     printf("====== Проверка сжатия файла ======");
     
@@ -162,6 +159,12 @@ int main(void) {
     else {
         printf("\nК сожалению, программа оказалась неэффективна :(");
     }
-    
+*/
+
+int main(void) {
+    setlocale(LC_ALL, "Russian");
+
+    run_interface_huf();
+
     return 0;
 }

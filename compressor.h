@@ -1,8 +1,10 @@
 #ifndef CLI_COMPRESSOR
 #define CLI_COMPRESSOR
 
-#include <stdio.h>
 #include "huffman_tree.h"
+
+#include <stdio.h>
+
 
 #define MAX_CODE_LEN 256
 

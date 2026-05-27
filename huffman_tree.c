@@ -1,4 +1,6 @@
 #include "huffman_tree.h"
+
+#include <stddef.h>
 #include <stdlib.h>
 
 typedef struct {
