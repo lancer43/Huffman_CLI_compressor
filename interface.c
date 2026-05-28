@@ -169,11 +169,13 @@ static void run_compress_file(const char* input_path, const char* output_path) {
 
 	if (source == NULL) {
 		printf("\n\nОшибка открытия исходного файла (для чтения)");
-		return;
+		
+		goto cleanup;
 	}
 	if (compressed_file == NULL) {
 		printf("\n\nОшибка открытия сжатого файла (для записи)");
-		return;
+		
+		goto cleanup;
 	}
 
 	printf("\n\nПодсчёт частоты каждого символа...");
@@ -181,41 +183,36 @@ static void run_compress_file(const char* input_path, const char* output_path) {
 	int success = frequency_counting(source, freq_count);
 	if (!success) {
 		printf("\nПодсчет частоты неудачный");
-		return;
+		
+		goto cleanup;
 	}
 	printf("\nЧастота посчитана успешно!");
 
-	// [DEBUG]: смотрим частоты
-	/*
-	for (size_t i = 0; i < ASCII_ALP_SIZE; i++) {
-		printf("\n[DEBUG]: arr[%zu] = %zu", i, freq_count[i]);
-	}
-	*/
-
-	CodeTable table = { 0 };
-
 	printf("\n\nЗаполняем таблицу бинарных кодов для сжатия...");
+	CodeTable table = { 0 };
 	success = coding_symbols(freq_count, &table);
 	if (!success) {
 		printf("\nОшибка заполнения таблицы кодов");
+
+		goto cleanup;
 	}
 	printf("\nТаблица кодов успешно заполнена!");
-
-	// [TODO]: это можно встроить в compress_file_v1()? по сути ее область ответственности
-	fseek(source, 0, SEEK_SET);
 
 	printf("\n\nСжимаем файл...");
 	success = compress_file_v1(source, compressed_file, freq_count, &table);
 	if (!success) {
 		printf("\nОшибка сжатия файла");
-		return;
+		
+		goto cleanup;
 	}
 
 	printf("\nФайл сжат успешно!");
-	printf("\n\nСжатый файл лежит по пути: %s", output_path);
+	printf("\n\nСжатый файл лежит по пути: '%s'", output_path);
 
-	fclose(source);
-	fclose(compressed_file);
+cleanup:
+
+	if (source)				fclose(source);
+	if (compressed_file)	fclose(compressed_file);
 }
 
 static void run_decompress_file(const char* input_path, const char* output_path) {
@@ -288,9 +285,10 @@ static void decompress_interface(const char* input_path) {
 
 	char output_path[MAX_PATH_LEN];
 	strncpy(output_path, input_path, MAX_PATH_LEN);
-
+	
+	// ПРОВЕРИТЬ [TODO]
 	// 1 - под '\0'
-	if (strlen(output_path) - huf_format_len + strlen(format) + 1 > MAX_PATH_LEN) {
+	if (strlen(output_path) - LEN_COMP_EXT + strlen(format) + 1 > MAX_PATH_LEN) {
 		printf("\nОшибка: путь слишком длинный");
 		return;
 	}

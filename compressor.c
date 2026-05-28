@@ -131,12 +131,15 @@ int compress_file_v1(
 	if (istream == NULL || ostream == NULL || arr == NULL || table == NULL) 
 		return 0;
 
+	// выставляем каретки в начало для корректного чтения
+	fseek(istream, 0, SEEK_SET);
+	fseek(ostream, 0, SEEK_SET);
+
 	// в начало оверхеда запишем размер файла (в байтах)
 	size_t size_file = 0;
 	for (size_t i = 0; i < ASCII_ALP_SIZE; i++) {
 		size_file += arr[i];
 	}
-
 	if (fwrite(&size_file, sizeof(size_file), 1, ostream) != 1)
 		return 0;
 
