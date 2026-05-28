@@ -11,8 +11,11 @@
 #include <string.h>
 #include <assert.h>
 
-#define MAX_PATH_LEN 1024
-#define MAX_FORMAT_LEN 10
+#define MAX_PATH_LEN			1024
+#define MAX_FORMAT_LEN			10
+
+#define COMPRESSED_EXTENSION	".huf"
+#define LEN_COMP_EXT			4
 
 enum {
 	exit,
@@ -20,9 +23,10 @@ enum {
 	run_decompress
 };
 
-enum {
-	huf_format_len = 3
-};
+typedef enum {
+	PATH_VALID_NO_EXTENSION,
+	PATH_VALID_WITH_EXTENSION
+} PathStatus_e;
 
 static void greeting_user(void) {
 	printf("========== АРХИВАТОР ЗАПУЩЕН ==========");
@@ -41,11 +45,13 @@ static void show_menu(void) {
 /*
 	@brief Ввод пути файла для сжатия/распаковки
 	@param input_path - строка для сохранения корректного пути
+	@return возвращает флаг расширения файла (есть - 1, нет - 0)
 */
-static void enter_path(char input_path[MAX_PATH_LEN]) {
+static PathStatus_e enter_path(char input_path[MAX_PATH_LEN]) {
 	// главной функцией run_interface_huf() гарантируется строка-путь нужной длины
 	assert(input_path != NULL);
 	int valid_flag = 0;
+	int extension_flag = -1;
 
 	while (!valid_flag) {
 		printf("\nПеретащите файл в консоль (или введите путь к файлу вручную): ");
@@ -122,13 +128,15 @@ static void enter_path(char input_path[MAX_PATH_LEN]) {
 		
 		if (format_point == NULL ||
 			(ptr != NULL && format_point < ptr) ||
-			format_point == ptr + 1) {
+			format_point == ptr + 1 ||
+			format_point == input_path) {
 			printf("\nПредупреждение: формат файла неопределён. Отправьте любой символ, если хотите повторить ввод (иначе - Enter).\n");
 			int c = getchar();
 
 			if (c != '\n') {
 
 				while ((c = getchar()) != '\n' && c != EOF);
+				extension_flag = PATH_VALID_NO_EXTENSION;
 				continue;
 			}
 		}
@@ -143,7 +151,11 @@ static void enter_path(char input_path[MAX_PATH_LEN]) {
 		fclose(test_open);
 
 		valid_flag = 1;
+		if (extension_flag == -1) {
+			extension_flag = PATH_VALID_WITH_EXTENSION;
+		}
 	}
+	return extension_flag;
 }
 
 /*
@@ -238,29 +250,28 @@ static void run_decompress_file(const char* input_path, const char* output_path)
 	@brief Функция подготовки пути для сжатого файла и его сжатие
 	@param input_path - путь исходного файла
 */
-static void compress_interface(const char* input_path) {
+static void compress_interface(const char* input_path, int extension_flag) {
+	// на вход подаётся корректный путь к файлу (гарантируется enter_path())
 
-	// резервируем последние 3 символа под формат .huf
-	if (strlen(input_path) > MAX_PATH_LEN - huf_format_len) {
+	// создаём путь для записи сжатого файла
+	char output_path[MAX_PATH_LEN];
+	snprintf(output_path, sizeof(output_path), "%s", input_path);
+
+	// если расширение у файла было, то удаляем его
+	if (extension_flag == PATH_VALID_WITH_EXTENSION) {
+		char* point = strrchr(output_path, '.');
+		*point = '\0';
+	}
+
+	// проверяем хватит ли места на формат + символ '\0'
+	if (strlen(output_path) + LEN_COMP_EXT + 1 > MAX_PATH_LEN) {
 		printf("\nОшибка: путь к файлу слишком длинный.");
 		return;
 	}
 
-	// создаём путь для записи сжатого файла
-	char output_path[MAX_PATH_LEN];
-
-	strncpy(output_path, input_path, MAX_PATH_LEN);
+	// добавляем формат архиватора
+	strncat(output_path, COMPRESSED_EXTENSION, LEN_COMP_EXT);
 	
-	char* formatter = strrchr(output_path, '.');
-	// [TODO]: можно переделать проверку на корректность пути более "умно"
-	if (formatter == NULL) {
-		printf("Ошибка: введён некорректный формат файла");
-		return;
-	}
-
-	formatter[1] = '\0';
-	strncat(formatter, "huf", huf_format_len);
-
 	// тут щас будем выделять память, таблицу все дела пупупу
 	run_compress_file(input_path, output_path);
 }
@@ -293,6 +304,9 @@ static void decompress_interface(const char* input_path) {
 	run_decompress_file(input_path, output_path);
 }
 
+
+// ========== ГЛАВНАЯ ФУНКЦИЯ МОДУЛЯ ==========
+
 void run_interface_huf(void) {
 	
 	greeting_user();
@@ -320,11 +334,9 @@ void run_interface_huf(void) {
 		case run_compress: {
 			char path[MAX_PATH_LEN];
 			
-			enter_path(path);
+			int extension_flag = enter_path(path);
 
-			
-
-			compress_interface(path);
+			compress_interface(path, extension_flag);
 
 			break;
 		}
