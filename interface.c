@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <locale.h>
 #include <string.h>
+#include <assert.h>
 
 #define MAX_PATH_LEN 1024
 #define MAX_FORMAT_LEN 10
@@ -35,38 +36,102 @@ static void show_menu(void) {
 	printf("\n1. Сжать файл\
 			\n2. Распаковать файл\
 			\n0. Выход");
-
-
 }
 
 /*
 	@brief Ввод пути файла для сжатия/распаковки
 	@param input_path - строка для сохранения корректного пути
 */
-static void enter_path(char* input_path) {
-	printf("\nПеретащите файл в консоль (или введите путь к файлу вручную): ");
+static void enter_path(char input_path[MAX_PATH_LEN]) {
+	// главной функцией run_interface_huf() гарантируется строка-путь нужной длины
+	assert(input_path != NULL);
+	int valid_flag = 0;
 
-	while (fgets(input_path, MAX_PATH_LEN, stdin) == NULL) {
-		printf("\nОшибка записи пути к файлу. Повторите попытку.");
+	while (!valid_flag) {
 		printf("\nПеретащите файл в консоль (или введите путь к файлу вручную): ");
-	};
 
+		// fgets() читает максимум MAX_PATH_LEN - 1 символов
+		if (fgets(input_path, MAX_PATH_LEN, stdin) == NULL) {
+			printf("\nОшибка чтения. Повторите попытку.");
 
-	// заменяем последний символ на конец строки
-	input_path[strcspn(input_path, "\n")] = '\0';
+			// чистим буфер
+			int c;
+			while ((c = getchar()) != '\n' && c != EOF);
 
-	// очищаем файл от кавычек по бокам
-	char* quote_ptr = strchr(input_path, '\"');
-	while (quote_ptr != NULL) {
-		memmove(quote_ptr, &quote_ptr[1], strlen(quote_ptr));
+			continue;
+		}
 
-		quote_ptr = strchr(input_path, '\"');
-	}
+		// если длинный путь
+		if (strchr(input_path, '\n') == NULL && strlen(input_path) == MAX_PATH_LEN - 1) {
+			printf("\nОшибка: путь слишком длинный. Повторите попытку");
 
-	char* slash = strchr(input_path, '\\');
-	while (slash != NULL) {
-		*slash = '/';
-		slash = strchr(input_path, '\\');
+			// чистим буфер
+			int c;
+			while ((c = getchar()) != '\n' && c != EOF);
+
+			continue;
+		}
+
+		// заменяем последний символ на конец строки
+		input_path[strcspn(input_path, "\n")] = '\0';
+
+		// вспомогательный указатель
+		char* ptr = NULL;
+
+		// меняем слэши на нормальные
+		ptr = strchr(input_path, '\\');
+		while (ptr != NULL) {
+			*ptr = '/';
+			ptr = strchr(input_path, '\\');
+		}
+		ptr = NULL;
+
+		// убираем кавычки (тут их внутри пути просто не может быть)
+		ptr = strchr(input_path, '\"');
+		while (ptr != NULL) {
+			memmove(ptr, ptr + 1, strlen(ptr) + 1);
+
+			ptr = strchr(input_path, '\"');
+		}
+		ptr = NULL;
+
+		// убираем пробелы в начале
+		while (input_path[0] == ' ') {
+			memmove(input_path, input_path + 1, strlen(input_path) + 1);
+		}
+
+		// убираем пробелы в конце
+		ptr = strrchr(input_path, '\0') - 1;
+
+		while (*ptr == ' ' && ptr != input_path) *ptr-- = '\0';
+
+		// если введен просто текст
+		char* format_point = strrchr(input_path, '.');
+		ptr = strrchr(input_path, '/');
+		
+		if (format_point == NULL ||
+			(ptr != NULL && format_point < ptr) ||
+			format_point == ptr + 1) {
+			printf("\nПредупреждение: формат файла неопределён. Отправьте любой символ, если хотите повторить ввод (иначе - Enter).\n");
+			int c = getchar();
+
+			if (c != '\n') {
+
+				while ((c = getchar()) != '\n' && c != EOF);
+				continue;
+			}
+		}
+
+		// финальная железобетонная проверка
+		FILE* test_open = fopen(input_path, "rb");
+		if (test_open == NULL) {
+			printf("\nДанный путь не существует. Повторите попытку.");
+			continue;
+		}
+
+		fclose(test_open);
+
+		valid_flag = 1;
 	}
 }
 
