@@ -29,6 +29,27 @@ typedef enum {
 	PATH_VALID_WITH_EXTENSION
 } PathStatus_e;
 
+typedef struct {
+	size_t in_size;
+	size_t out_size;
+	
+	double coefficient;
+
+	double total_time;
+	double freq_time;
+	double bincode_time;
+	double compress_time;
+} AlgorithmEfficiency_s;
+
+typedef struct {
+	clock_t start_total;
+	clock_t stop_freq;
+	clock_t start_bincode;
+	clock_t stop_bincode;
+	clock_t start_compress;
+	clock_t stop_total;
+} Clocks_s;
+
 static void greeting_user(void) {
 	printf("========== АРХИВАТОР ЗАПУЩЕН ==========");
 	printf("\n\nДобро пожаловать в архиватор!");
@@ -44,75 +65,75 @@ static void show_menu(void) {
 }
 /*
 	@brief Вывод анализа работы архиватора
-	@param time - время сжатия/распаковки
-	@param coefficient - коэффициент сжатия
-	@param in_size - размер входного файла (в байтах)
-	@param out_size - размер выходного файла (в байтах)
+	@param stats - указатель на структуру с собранной статистикой
 	@param mode - режим работы архиватора (сжатие/распаковка)
 */
-static void show_analysis(const double time, const double coefficient, const size_t* in_size, const size_t* out_size, const Mode_e mode) {
+static void show_analysis(AlgorithmEfficiency_s* stats, const Mode_e mode) {
 	assert(mode == run_compress || mode == run_decompress);
-	assert(in_size != NULL && out_size != NULL);
+	assert(stats != NULL);
 	
 	switch (mode) {
 	case run_compress:
 		printf("\n\n========== АНАЛИЗ СЖАТИЯ ФАЙЛА ==========");
 
-		printf("\n\nРазмер исходного файла: %zu байт", *in_size);
-		printf("\nРазмер сжатого файла: %zu байт", *out_size);
-		printf("\nКоэффициент сжатия файла равен %.2lf", coefficient);
+		printf("\n\nРазмер исходного файла: %zu байт", stats->in_size);
+		printf("\nРазмер сжатого файла: %zu байт", stats->out_size);
+		printf("\nКоэффициент сжатия файла равен %.2lf", stats->coefficient);
 		
-		
-		printf("\n\nВремя сжатия файла составило %.3lf сек.", time);
+		printf("\n\nОбщее время работы алгоритма составило %.3lf сек.", stats->total_time);
+		printf("\n\t- Подсчёт частот занял %.3lf сек.", stats->freq_time);
+		printf("\n\t- Заполнение таблицы бинарных кодов заняло %.3lf сек.", stats->bincode_time);
+		printf("\n\t- Сжатие файла заняло %.3lf сек.", stats->compress_time);
 		break;
 
 	case run_decompress:
 		printf("\n\n========== АНАЛИЗ РАСПАКОВКИ ФАЙЛА ==========");
 
-		printf("\n\nРазмер сжатого файла: %zu байт", *in_size);
-		printf("\nРазмер распакованного файла: %zu байт", *out_size);
-		printf("\nКоэффициент сжатия файла равен %.2lf", coefficient);
+		printf("\n\nРазмер сжатого файла: %zu байт", stats->in_size);
+		printf("\nРазмер распакованного файла: %zu байт", stats->out_size);
+		printf("\nКоэффициент сжатия файла равен %.2lf", stats->coefficient);
 
-
-		printf("\n\nВремя распаковки файла составило %.3lf сек.", time);
+		printf("\n\nВремя распаковки файла составило %.3lf сек.", stats->total_time);
 		break;
 	}
-	
 }
 
 /*
 	@brief Вычисление коэффициента сжатия файла и времени сжатия/распаковки
 	@param istream - входной файл
 	@param ostream - выходной файл
-	@param start - начало замера времени
-	@param stop - конец замера времени
+	@param clocks - указатель на структуру с замеренными тактами
 	@param mode - режим работы (сжатие/распаковка)
 */
-static void result_analysis(FILE* istream, FILE* ostream, clock_t start, clock_t stop, Mode_e mode) {
-	assert(istream != NULL && ostream != NULL);
+static void result_analysis(FILE* istream, FILE* ostream, Clocks_s* clocks, Mode_e mode) {
+	assert(istream != NULL && ostream != NULL && clocks != NULL);
 	assert(mode == run_compress || mode == run_decompress);
 
-	double time = (double)(stop - start) / CLOCKS_PER_SEC;
+	AlgorithmEfficiency_s stats = { 0 };
+
+	
+	stats.freq_time = (double)(clocks->stop_freq - clocks->start_total) / CLOCKS_PER_SEC;
+	stats.bincode_time = (double)(clocks->stop_bincode - clocks->start_bincode) / CLOCKS_PER_SEC;
+	stats.compress_time = (double)(clocks->stop_total - clocks->start_compress) / CLOCKS_PER_SEC;
+	stats.total_time = stats.freq_time + stats.bincode_time + stats.compress_time;
 
 	fseek(istream, 0, SEEK_END);
 	fseek(ostream, 0, SEEK_END);
 
-	size_t in_size = ftell(istream);
-	size_t out_size = ftell(ostream);
+	stats.in_size = ftell(istream);
+	stats.out_size = ftell(ostream);
 
 	fseek(istream, 0, SEEK_SET);
 	fseek(ostream, 0, SEEK_SET);
 
-	double coefficient = 0.0;
-
 	if (mode == run_compress) {
-		coefficient = (double)in_size / out_size;
+		stats.coefficient = (double)stats.in_size / stats.out_size;
 	}
 	if (mode == run_decompress) {
-		coefficient = (double)out_size / in_size;
+		stats.coefficient = (double)stats.out_size / stats.in_size;
 	}
 
-	show_analysis(time, coefficient, &in_size, &out_size, mode);
+	show_analysis(&stats, mode);
 }
 
 /*
@@ -241,6 +262,9 @@ static void run_compress_file(const char* input_path, const char* output_path) {
 	FILE* source = fopen(input_path, "rb");
 	FILE* compressed_file = fopen(output_path, "wb");
 
+	// структура для записи данных о количестве тактов на каждом этапе сжатия
+	Clocks_s clocks = { 0 };
+
 	if (source == NULL) {
 		printf("\n\nОшибка открытия исходного файла (для чтения)");
 		
@@ -252,42 +276,52 @@ static void run_compress_file(const char* input_path, const char* output_path) {
 		goto cleanup;
 	}
 
-	clock_t start = clock();
-
 	printf("\n\nПодсчёт частоты каждого символа...");
 	size_t freq_count[ASCII_ALP_SIZE] = { 0 };
+	
+	clocks.start_total = clock();
 	int success = frequency_counting(source, freq_count);
 	if (!success) {
 		printf("\nПодсчет частоты неудачный");
 		
 		goto cleanup;
 	}
+	clocks.stop_freq = clock();
+	
 	printf("\nЧастота посчитана успешно!");
+
+	
 
 	printf("\n\nЗаполняем таблицу бинарных кодов для сжатия...");
 	CodeTable table = { 0 };
+
+	clocks.start_bincode = clock();
 	success = coding_symbols(freq_count, &table);
 	if (!success) {
 		printf("\nОшибка заполнения таблицы кодов");
 
 		goto cleanup;
 	}
+	clocks.stop_bincode = clock();
+
 	printf("\nТаблица кодов успешно заполнена!");
 
 	printf("\n\nСжимаем файл...");
+
+	clocks.start_compress = clock();
 	success = compress_file_v1(source, compressed_file, freq_count, &table);
 	if (!success) {
 		printf("\nОшибка сжатия файла");
 		
 		goto cleanup;
 	}
-	clock_t stop = clock();
+	clocks.stop_total = clock();
 
 	printf("\nФайл сжат успешно!");
 	printf("\n\nСжатый файл лежит по пути: '%s'", output_path);
 
 	fflush(compressed_file);
-	result_analysis(source, compressed_file, start, stop, run_compress);
+	result_analysis(source, compressed_file, &clocks, run_compress);
 
 cleanup:
 
@@ -304,6 +338,8 @@ static void run_decompress_file(const char* input_path, const char* output_path)
 	FILE* compressed_file = fopen(input_path, "rb");
 	FILE* decompressed_file = fopen(output_path, "wb");
 
+	Clocks_s clocks = { 0 };
+
 	if (compressed_file == NULL) {
 		printf("\n\nОшибка открытия сжатого файла (для чтения)");
 		
@@ -317,20 +353,20 @@ static void run_decompress_file(const char* input_path, const char* output_path)
 
 	printf("\n\nРаспаковываем файл...");
 
-	clock_t start = clock();
+	clocks.start_total = clock();
 	int success = decompress_file_v1(compressed_file, decompressed_file);
 	if (!success) {
 		printf("\nОшибка распаковки файла");
 		
 		goto cleanup;
 	}
-	clock_t stop = clock();
+	clocks.stop_total = clock();
 
 	printf("\nФайл распакован успешно!");
 	printf("\n\nРаспакованный файл лежит по пути: %s", output_path);
 
 	fflush(decompressed_file);
-	result_analysis(compressed_file, decompressed_file, start, stop, run_decompress);
+	result_analysis(compressed_file, decompressed_file, &clocks, run_decompress);
 cleanup:
 
 	if (compressed_file)	fclose(compressed_file);
