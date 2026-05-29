@@ -221,26 +221,31 @@ static void run_decompress_file(const char* input_path, const char* output_path)
 
 	if (compressed_file == NULL) {
 		printf("\n\nОшибка открытия сжатого файла (для чтения)");
-		return;
+		
+		goto cleanup;
 	}
 	if (decompressed_file == NULL) {
-		printf("[DEBUG] output_path: '%s'", output_path);
-		printf("\n\nОшибка открытия распакованного файла (для записи). Код: %d\n", errno);
-		perror(output_path);
-		return;
+		printf("\n\nОшибка открытия распакованного файла (для записи).");
+		
+		goto cleanup;
 	}
 
 	printf("\n\nРаспаковываем файл...");
 	int success = decompress_file_v1(compressed_file, decompressed_file);
 	if (!success) {
 		printf("\nОшибка распаковки файла");
-		return;
+		
+		goto cleanup;
 	}
+
 	printf("\nФайл распакован успешно!");
 	printf("\n\nРаспакованный файл лежит по пути: %s", output_path);
 
-	fclose(compressed_file);
-	fclose(decompressed_file);
+
+cleanup:
+
+	if (compressed_file)	fclose(compressed_file);
+	if (decompressed_file)	fclose(decompressed_file);
 }
 
 /*
@@ -274,30 +279,52 @@ static void compress_interface(const char* input_path, int extension_flag) {
 }
 
 static void decompress_interface(const char* input_path) {
+	// на вход подаётся корректный путь к файлу (гарантируется enter_path())
+	
+	// проверка на нужный формат
+	char* point = strrchr(input_path, '.');
+	if (point == NULL || strcmp(point, COMPRESSED_EXTENSION) != 0) {
+		printf("\nОшибка: неверный формат файла.");
+		return;
+	}
+	point = NULL;
+	
+
+	// [TODO] внести информацию о формате исходного файла в сам алгоритм сжатия (когда замерджим ветку с главной)
+	// вытекает проблема в будущем: если перенесем информацию о формате исходника в decompress_file_v1(), то 
+	// мы не сможем тут проверить длину заранее.
+	// придется либо отдельно вызывать файловый поток чтобы читать часть оверхеда здесь вручную, либо добавлять отдельную функцию
+	// что то вроде read_overhead_file(), юзать ее здесь, но тогда и править алгоритм decompress_file_v1().
 	char format[MAX_FORMAT_LEN];
-	printf("\nВведите формат файла для распаковки (без точки): ");
+
+	printf("\nВведите формат файла для распаковки (с точкой): ");
 	while (fgets(format, MAX_FORMAT_LEN, stdin) == NULL) {
 		printf("\nОшибка записи формата. Повторите попытку.");
-		printf("\nВведите формат файла для распаковки: ");
+		printf("\nВведите формат файла для распаковки (с точкой): ");
+
+		// чистим буфер
+		int c;
+		while ((c = getchar()) != '\n' && c != EOF);
 	}
 
 	format[strcspn(format, "\n")] = '\0';
 
+	// все что выше удалю потом! (выполнение [TODO])
 	char output_path[MAX_PATH_LEN];
-	strncpy(output_path, input_path, MAX_PATH_LEN);
+	snprintf(output_path, sizeof(output_path), "%s", input_path);
+
+	// убираем формат с точкой
+	point = strrchr(output_path, '.');
+	assert(point != NULL);
+	*point = '\0';
 	
-	// ПРОВЕРИТЬ [TODO]
-	// 1 - под '\0'
-	if (strlen(output_path) - LEN_COMP_EXT + strlen(format) + 1 > MAX_PATH_LEN) {
+	// проверка длины
+	if (strlen(output_path) + strlen(format) + 1 > MAX_PATH_LEN) {
 		printf("\nОшибка: путь слишком длинный");
 		return;
 	}
 
-	char* formatter = strrchr(output_path, '.');
-	formatter[1] = '\0';
-
-	strncat(output_path, format, MAX_FORMAT_LEN);
-	printf("[DEBUG] Путь для распакованного файла: %s", output_path);
+	strncat(output_path, format, strlen(format));
 
 	run_decompress_file(input_path, output_path);
 }
