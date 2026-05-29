@@ -83,17 +83,17 @@ int decompress_file_v1(
 ) {
 	assert(istream != NULL && ostream != NULL);
 
+	// выставляем каретки в начало для корректного чтения
+	fseek(istream, 0, SEEK_SET);
+	fseek(ostream, 0, SEEK_SET);
+
 	// запоминаем размер файла байтах (сколько должно быть символов после распаковки)
 	size_t file_size = 0;
 	fread(&file_size, sizeof(file_size), 1, istream);
 
-
 	// восстанавливаем массив частот
 	size_t freq_count[ASCII_ALP_SIZE] = { 0 };
 	fread(freq_count, sizeof(*freq_count), ASCII_ALP_SIZE, istream);
-
-	size_t count = counting_used_syms(freq_count);
-	if (!count) return 0;
 
 	// выделяем память под узлы дерева Хаффмана
 	Node* nodes = NULL;

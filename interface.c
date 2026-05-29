@@ -281,43 +281,42 @@ static void run_compress_file(const char* input_path, const char* output_path) {
 	
 	clocks.start_total = clock();
 	int success = frequency_counting(source, freq_count);
+	clocks.stop_freq = clock();
+	
 	if (!success) {
 		printf("\nПодсчет частоты неудачный");
 		
 		goto cleanup;
 	}
-	clocks.stop_freq = clock();
-	
 	printf("\nЧастота посчитана успешно!");
-
-	
 
 	printf("\n\nЗаполняем таблицу бинарных кодов для сжатия...");
 	CodeTable table = { 0 };
 
 	clocks.start_bincode = clock();
 	success = coding_symbols(freq_count, &table);
+	clocks.stop_bincode = clock();
+	
 	if (!success) {
 		printf("\nОшибка заполнения таблицы кодов");
 
 		goto cleanup;
 	}
-	clocks.stop_bincode = clock();
-
 	printf("\nТаблица кодов успешно заполнена!");
 
 	printf("\n\nСжимаем файл...");
 
 	clocks.start_compress = clock();
 	success = compress_file_v1(source, compressed_file, freq_count, &table);
+	clocks.stop_total = clock();
+	
 	if (!success) {
 		printf("\nОшибка сжатия файла");
 		
 		goto cleanup;
 	}
-	clocks.stop_total = clock();
-
 	printf("\nФайл сжат успешно!");
+	
 	printf("\n\nСжатый файл лежит по пути: '%s'", output_path);
 
 	fflush(compressed_file);
@@ -355,12 +354,13 @@ static void run_decompress_file(const char* input_path, const char* output_path)
 
 	clocks.start_total = clock();
 	int success = decompress_file_v1(compressed_file, decompressed_file);
+	clocks.stop_total = clock();
+
 	if (!success) {
 		printf("\nОшибка распаковки файла");
 		
 		goto cleanup;
 	}
-	clocks.stop_total = clock();
 
 	printf("\nФайл распакован успешно!");
 	printf("\n\nРаспакованный файл лежит по пути: %s", output_path);
