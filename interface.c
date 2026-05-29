@@ -10,6 +10,7 @@
 #include <locale.h>
 #include <string.h>
 #include <assert.h>
+#include <time.h>
 
 #define MAX_PATH_LEN			1024
 #define MAX_FORMAT_LEN			10
@@ -17,11 +18,11 @@
 #define COMPRESSED_EXTENSION	".huf"
 #define LEN_COMP_EXT			4
 
-enum {
+typedef enum {
 	exit,
 	run_compress,
 	run_decompress
-};
+} Mode_e;
 
 typedef enum {
 	PATH_VALID_NO_EXTENSION,
@@ -41,6 +42,78 @@ static void show_menu(void) {
 			\n2. Распаковать файл\
 			\n0. Выход");
 }
+/*
+	@brief Вывод анализа работы архиватора
+	@param time - время сжатия/распаковки
+	@param coefficient - коэффициент сжатия
+	@param in_size - размер входного файла (в байтах)
+	@param out_size - размер выходного файла (в байтах)
+	@param mode - режим работы архиватора (сжатие/распаковка)
+*/
+static void show_analysis(const double time, const double coefficient, const size_t* in_size, const size_t* out_size, const Mode_e mode) {
+	assert(mode == run_compress || mode == run_decompress);
+	assert(in_size != NULL && out_size != NULL);
+	
+	switch (mode) {
+	case run_compress:
+		printf("\n\n========== АНАЛИЗ СЖАТИЯ ФАЙЛА ==========");
+
+		printf("\n\nРазмер исходного файла: %zu байт", *in_size);
+		printf("\nРазмер сжатого файла: %zu байт", *out_size);
+		printf("\nКоэффициент сжатия файла равен %.2lf", coefficient);
+		
+		
+		printf("\n\nВремя сжатия файла составило %.3lf сек.", time);
+		break;
+
+	case run_decompress:
+		printf("\n\n========== АНАЛИЗ РАСПАКОВКИ ФАЙЛА ==========");
+
+		printf("\n\nРазмер сжатого файла: %zu байт", *in_size);
+		printf("\nРазмер распакованного файла: %zu байт", *out_size);
+		printf("\nКоэффициент сжатия файла равен %.2lf", coefficient);
+
+
+		printf("\n\nВремя распаковки файла составило %.3lf сек.", time);
+		break;
+	}
+	
+}
+
+/*
+	@brief Вычисление коэффициента сжатия файла и времени сжатия/распаковки
+	@param istream - входной файл
+	@param ostream - выходной файл
+	@param start - начало замера времени
+	@param stop - конец замера времени
+	@param mode - режим работы (сжатие/распаковка)
+*/
+static void result_analysis(FILE* istream, FILE* ostream, clock_t start, clock_t stop, Mode_e mode) {
+	assert(istream != NULL && ostream != NULL);
+	assert(mode == run_compress || mode == run_decompress);
+
+	double time = (double)(stop - start) / CLOCKS_PER_SEC;
+
+	fseek(istream, 0, SEEK_END);
+	fseek(ostream, 0, SEEK_END);
+
+	size_t in_size = ftell(istream);
+	size_t out_size = ftell(ostream);
+
+	fseek(istream, 0, SEEK_SET);
+	fseek(ostream, 0, SEEK_SET);
+
+	double coefficient = 0.0;
+
+	if (mode == run_compress) {
+		coefficient = (double)in_size / out_size;
+	}
+	if (mode == run_decompress) {
+		coefficient = (double)out_size / in_size;
+	}
+
+	show_analysis(time, coefficient, &in_size, &out_size, mode);
+}
 
 /*
 	@brief Ввод пути файла для сжатия/распаковки
@@ -54,6 +127,7 @@ static PathStatus_e enter_path(char input_path[MAX_PATH_LEN]) {
 	int extension_flag = -1;
 
 	while (!valid_flag) {
+		extension_flag = -1;
 		printf("\nПеретащите файл в консоль (или введите путь к файлу вручную): ");
 
 		// fgets() читает максимум MAX_PATH_LEN - 1 символов
@@ -136,9 +210,9 @@ static PathStatus_e enter_path(char input_path[MAX_PATH_LEN]) {
 			if (c != '\n') {
 
 				while ((c = getchar()) != '\n' && c != EOF);
-				extension_flag = PATH_VALID_NO_EXTENSION;
 				continue;
 			}
+			extension_flag = PATH_VALID_NO_EXTENSION;
 		}
 
 		// финальная железобетонная проверка
@@ -178,6 +252,8 @@ static void run_compress_file(const char* input_path, const char* output_path) {
 		goto cleanup;
 	}
 
+	clock_t start = clock();
+
 	printf("\n\nПодсчёт частоты каждого символа...");
 	size_t freq_count[ASCII_ALP_SIZE] = { 0 };
 	int success = frequency_counting(source, freq_count);
@@ -205,9 +281,13 @@ static void run_compress_file(const char* input_path, const char* output_path) {
 		
 		goto cleanup;
 	}
+	clock_t stop = clock();
 
 	printf("\nФайл сжат успешно!");
 	printf("\n\nСжатый файл лежит по пути: '%s'", output_path);
+
+	fflush(compressed_file);
+	result_analysis(source, compressed_file, start, stop, run_compress);
 
 cleanup:
 
@@ -215,6 +295,11 @@ cleanup:
 	if (compressed_file)	fclose(compressed_file);
 }
 
+/*
+	@brief Функция полного цикла распаковки файла
+	@param input_path - путь сжимаемого файла
+	@param output_path - путь сжатого файла
+*/
 static void run_decompress_file(const char* input_path, const char* output_path) {
 	FILE* compressed_file = fopen(input_path, "rb");
 	FILE* decompressed_file = fopen(output_path, "wb");
@@ -231,17 +316,21 @@ static void run_decompress_file(const char* input_path, const char* output_path)
 	}
 
 	printf("\n\nРаспаковываем файл...");
+
+	clock_t start = clock();
 	int success = decompress_file_v1(compressed_file, decompressed_file);
 	if (!success) {
 		printf("\nОшибка распаковки файла");
 		
 		goto cleanup;
 	}
+	clock_t stop = clock();
 
 	printf("\nФайл распакован успешно!");
 	printf("\n\nРаспакованный файл лежит по пути: %s", output_path);
 
-
+	fflush(decompressed_file);
+	result_analysis(compressed_file, decompressed_file, start, stop, run_decompress);
 cleanup:
 
 	if (compressed_file)	fclose(compressed_file);
@@ -249,7 +338,7 @@ cleanup:
 }
 
 /*
-	@brief Функция подготовки пути для сжатого файла и его сжатие
+	@brief Функция создания пути для сжатого файла и его сжатие
 	@param input_path - путь исходного файла
 */
 static void compress_interface(const char* input_path, int extension_flag) {
@@ -278,6 +367,10 @@ static void compress_interface(const char* input_path, int extension_flag) {
 	run_compress_file(input_path, output_path);
 }
 
+/*
+	@brief Функция создания пути для распакованного файла и его распаковка
+	@param input_path - путь сжатого файла
+*/
 static void decompress_interface(const char* input_path) {
 	// на вход подаётся корректный путь к файлу (гарантируется enter_path())
 	
