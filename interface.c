@@ -387,6 +387,132 @@ cleanup:
 }
 
 /*
+	@brief Перезапись имени файла
+	@param path - путь к файлу
+	@param extension_flag - флаг о наличии расширения файла (есть/нет)
+*/
+static void rewrite_file_name(char* path) {
+	int c;
+
+	printf("\nВведите новое имя файла: ");
+	char new_file_name[MAX_PATH_LEN];
+
+	int flag = 0;
+
+	while (!flag) {
+		if (fgets(new_file_name, MAX_PATH_LEN, stdin) == NULL) {
+			printf("\nОшибка чтения. Повторите попытку: ");
+
+			// чистим буфер
+			while ((c = getchar()) != '\n' && c != EOF);
+			continue;
+		}
+
+		// если пользователь просто нажал Enter из-за старого буфера, пропускаем
+		if (new_file_name[0] == '\n') {
+			continue;
+		}
+
+		new_file_name[strcspn(new_file_name, "\n")] = '\0';
+
+		// извлекаем текущее расширение файла (.huf или любое другое)
+		char extension[MAX_PATH_LEN] = "\0";
+		char* ext_ptr = strrchr(path, '.');
+		if (ext_ptr != NULL) {
+			strncpy(extension, ext_ptr, sizeof(extension) - 1);
+		}
+
+		// ищем последний слэш в текущем пути
+		char* slash_ptr = strrchr(path, '/');
+		char dir_path[MAX_PATH_LEN] = "\0";
+
+		if (slash_ptr != NULL) {
+			size_t dir_len = slash_ptr - path + 1;
+			if (dir_len < MAX_PATH_LEN) {
+				strncpy(dir_path, path, dir_len);
+				dir_path[dir_len] = '\0';
+			}
+		}
+
+		// собираем новый путь с сохраненным расширением
+		char temp_path[MAX_PATH_LEN];
+		int written = snprintf(temp_path, MAX_PATH_LEN, "%s%s%s", dir_path, new_file_name, extension);
+
+		if (written < 0 || written >= MAX_PATH_LEN) {
+			printf("\nОшибка: итоговый путь слишком длинный. Повторите попытку: ");
+			continue;
+		}
+
+		// перезаписываем исходный путь
+		strncpy(path, temp_path, MAX_PATH_LEN - 1);
+		path[MAX_PATH_LEN - 1] = '\0';
+
+		flag = 1;
+	}
+}
+
+/*
+	@brief Проверка существования файла по заданному пути
+	@param path - путь
+	@return 1 - проблема решена, 0 - отмена выполнения
+*/
+static int check_existence_file(char* path, PathStatus_e extension_flag) {
+	FILE* test_file = fopen(path, "rb");
+
+	// если файл не открылся — значит его нет, путь свободен для записи
+	if (test_file == NULL) {
+		return 1;
+	}
+	fclose(test_file);
+
+	printf("\nСжатый файл с таким именем уже существует. Хотите перезаписать его?\n");
+	printf("[y - перезаписать/n - отменить/r - изменить имя файла]: ");
+
+	int choice = -1;
+	int flag = 0;
+	int res = 0; // возвращаемое значение
+	int c; // переменная для очистки буфера
+
+	while (!flag) {
+		choice = getchar();
+
+		switch (choice) {
+		case 'y':
+		case 'Y':
+			flag = 1;
+			res = 1;
+			// чистим буфер от оставшегося '\n'
+			while ((c = getchar()) != '\n' && c != EOF);
+			break;
+		case 'n':
+		case 'N':
+			flag = 1;
+			res = 0;
+			// чистим буфер от оставшегося '\n'
+			while ((c = getchar()) != '\n' && c != EOF);
+			break;
+		case 'r':
+		case 'R':
+			// чистим буфер от оставшегося '\n'
+			while ((c = getchar()) != '\n' && c != EOF);
+
+			rewrite_file_name(path);
+			flag = 1;
+			res = 1;
+			break;
+		default:
+			printf("\nНекорректный ввод. Повторите попытку: ");
+			
+			// чистим буфер от оставшегося '\n'
+			while ((c = getchar()) != '\n' && c != EOF);
+			break;
+		}
+	}
+
+	return res;
+}
+
+/*
 	@brief Функция создания пути для сжатого файла и его сжатие
 	@param input_path - путь исходного файла
 */
@@ -411,6 +537,9 @@ static void compress_interface(const char* input_path, PathStatus_e extension_fl
 
 	// добавляем формат архиватора
 	strncat(output_path, COMPRESSED_EXTENSION, LEN_COMP_EXT);
+
+	// проверяем существует ли такой сжатый файл и надо ли его перезаписать
+	if (!check_existence_file(output_path, extension_flag)) return;
 	
 	// тут щас будем выделять память, таблицу все дела пупупу
 	run_compress_file(input_path, output_path, extension_flag);
@@ -464,6 +593,8 @@ static void decompress_interface(const char* input_path) {
 
 	strncat(output_path, extension, ext_len);
 
+	if (!check_existence_file(output_path, PATH_VALID_WITH_EXTENSION)) return;
+
 	run_decompress_file(input_path, output_path);
 }
 
@@ -494,32 +625,34 @@ void run_interface_huf(void) {
 
 		switch (choice) {
 		
-		case run_compress: {
-			char path[MAX_PATH_LEN];
+			case run_compress: {
+				char path[MAX_PATH_LEN];
 			
-			int extension_flag = enter_path(path);
+				int extension_flag = enter_path(path);
 
-			compress_interface(path, extension_flag);
+				compress_interface(path, extension_flag);
 
-			break;
-		}
-		case run_decompress: {
-			char path[MAX_PATH_LEN];
+				break;
+			}
 
-			enter_path(path);
+			case run_decompress: {
+				char path[MAX_PATH_LEN];
 
-			decompress_interface(path);
+				enter_path(path);
 
-			break;
-		}
-		case exit:
-			printf("\nВыход...");
-			flag = 1;
-			break;
+				decompress_interface(path);
+
+				break;
+			}
+
+			case exit:
+				printf("\nВыход...");
+				flag = 1;
+				break;
 		
-		default:
-			printf("\nНекорректный ввод. Повторите попытку.");
-			break;
+			default:
+				printf("\nНекорректный ввод. Повторите попытку.");
+				break;
 		}
 
 		if (flag) break;
