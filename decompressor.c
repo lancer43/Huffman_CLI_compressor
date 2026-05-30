@@ -6,11 +6,47 @@
 #include <assert.h>
 
 
+
 enum {
 	bits_in_byte = 8,
 	bits_capacity_buf = 16
 };
 
+int read_overhead(FILE* istream, char extension[MAX_EXT_LENGTH], size_t* file_size, size_t freq_count[ASCII_ALP_SIZE]) {
+	assert(istream != NULL);
+
+	if (fseek(istream, 0, SEEK_SET)) 
+		return -1;
+
+	if (extension == NULL) {
+		if (fseek(istream, MAX_EXT_LENGTH, SEEK_CUR)) 
+			return -1;
+	} else {
+		if (fread(extension, sizeof(*extension), MAX_EXT_LENGTH, istream) != MAX_EXT_LENGTH) {
+			return 1;
+		}
+	}
+
+	if (file_size == NULL) {
+		if (fseek(istream, sizeof(size_t), SEEK_CUR)) 
+			return -1;
+	} else {
+		if (fread(file_size, sizeof(*file_size), 1, istream) != 1) {
+			return 2;
+		}
+	}
+
+	if (freq_count == NULL) {
+		if (fseek(istream, ASCII_ALP_SIZE * sizeof(size_t), SEEK_CUR)) 
+			return -1;
+	} else {
+		if (fread(freq_count, sizeof(*freq_count), ASCII_ALP_SIZE, istream) != ASCII_ALP_SIZE) {
+			return 3;
+		}
+	}
+
+	return 0;
+}
 
 /*
 	@brief Алгоритм расшифровки бинарного файла через обход дерева
@@ -84,16 +120,16 @@ int decompress_file_v1(
 	assert(istream != NULL && ostream != NULL);
 
 	// выставляем каретки в начало для корректного чтения
-	fseek(istream, 0, SEEK_SET);
-	fseek(ostream, 0, SEEK_SET);
+	if (fseek(istream, 0, SEEK_SET)) return 0;
+	if (fseek(ostream, 0, SEEK_SET)) return 0;
 
-	// запоминаем размер файла байтах (сколько должно быть символов после распаковки)
+	// читаем оверхед
 	size_t file_size = 0;
-	fread(&file_size, sizeof(file_size), 1, istream);
-
-	// восстанавливаем массив частот
 	size_t freq_count[ASCII_ALP_SIZE] = { 0 };
-	fread(freq_count, sizeof(*freq_count), ASCII_ALP_SIZE, istream);
+
+	if (read_overhead(istream, NULL, &file_size, freq_count) != 0) {
+		return 0;
+	}
 
 	// выделяем память под узлы дерева Хаффмана
 	Node* nodes = NULL;

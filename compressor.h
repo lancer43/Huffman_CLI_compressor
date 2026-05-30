@@ -40,13 +40,15 @@ int coding_symbols(size_t arr[ASCII_ALP_SIZE], CodeTable* table);
 	@param ostream - указатель на файл для записи (необходим режим "wb")
 	@param arr - указатель на массив частот
 	@param table - указатель на таблицу для кодирования
+	@param extension - строка с расширением (для оверхеда)
 	@return успех - 1, иначе - 0
 */
 int compress_file_v1(
 	FILE* istream,
 	FILE* ostream,
 	const size_t arr[ASCII_ALP_SIZE],
-	CodeTable* table
+	CodeTable* table,
+	char extension[MAX_EXT_LENGTH]
 );
 
 #endif

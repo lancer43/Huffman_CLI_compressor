@@ -13,7 +13,6 @@
 #include <time.h>
 
 #define MAX_PATH_LEN			1024
-#define MAX_FORMAT_LEN			10
 
 #define COMPRESSED_EXTENSION	".huf"
 #define LEN_COMP_EXT			4
@@ -104,8 +103,9 @@ static void show_analysis(AlgorithmEfficiency_s* stats, const Mode_e mode) {
 	@param ostream - выходной файл
 	@param clocks - указатель на структуру с замеренными тактами
 	@param mode - режим работы (сжатие/распаковка)
+	@return 1 - успех, иначе - 0
 */
-static void result_analysis(FILE* istream, FILE* ostream, Clocks_s* clocks, Mode_e mode) {
+static int result_analysis(FILE* istream, FILE* ostream, Clocks_s* clocks, Mode_e mode) {
 	assert(istream != NULL && ostream != NULL && clocks != NULL);
 	assert(mode == run_compress || mode == run_decompress);
 
@@ -117,14 +117,14 @@ static void result_analysis(FILE* istream, FILE* ostream, Clocks_s* clocks, Mode
 	stats.compress_time = (double)(clocks->stop_total - clocks->start_compress) / CLOCKS_PER_SEC;
 	stats.total_time = stats.freq_time + stats.bincode_time + stats.compress_time;
 
-	fseek(istream, 0, SEEK_END);
-	fseek(ostream, 0, SEEK_END);
+	if (fseek(istream, 0, SEEK_END)) return 0;
+	if (fseek(ostream, 0, SEEK_END)) return 0;
 
 	stats.in_size = ftell(istream);
 	stats.out_size = ftell(ostream);
 
-	fseek(istream, 0, SEEK_SET);
-	fseek(ostream, 0, SEEK_SET);
+	if (fseek(istream, 0, SEEK_SET)) return 0;
+	if (fseek(ostream, 0, SEEK_SET)) return 0;
 
 	if (mode == run_compress) {
 		stats.coefficient = (double)stats.in_size / stats.out_size;
@@ -134,6 +134,8 @@ static void result_analysis(FILE* istream, FILE* ostream, Clocks_s* clocks, Mode
 	}
 
 	show_analysis(&stats, mode);
+	
+	return 1;
 }
 
 /*
@@ -258,7 +260,7 @@ static PathStatus_e enter_path(char input_path[MAX_PATH_LEN]) {
 	@param input_path - путь сжимаемого файла
 	@param output_path - путь сжатого файла
 */
-static void run_compress_file(const char* input_path, const char* output_path) {
+static void run_compress_file(const char* input_path, const char* output_path, PathStatus_e extension_flag) {
 	FILE* source = fopen(input_path, "rb");
 	FILE* compressed_file = fopen(output_path, "wb");
 
@@ -306,8 +308,16 @@ static void run_compress_file(const char* input_path, const char* output_path) {
 
 	printf("\n\nСжимаем файл...");
 
+	// записываем расширение исходного файла для оверхеда
+	char extension[MAX_EXT_LENGTH] = { 0 };
+	if (extension_flag == PATH_VALID_WITH_EXTENSION) {
+		char* ptr = strrchr(input_path, '.');
+		assert(ptr != NULL);
+		strncat(extension, ptr, strlen(ptr));
+	}
+
 	clocks.start_compress = clock();
-	success = compress_file_v1(source, compressed_file, freq_count, &table);
+	success = compress_file_v1(source, compressed_file, freq_count, &table, extension);
 	clocks.stop_total = clock();
 	
 	if (!success) {
@@ -320,7 +330,8 @@ static void run_compress_file(const char* input_path, const char* output_path) {
 	printf("\n\nСжатый файл лежит по пути: '%s'", output_path);
 
 	fflush(compressed_file);
-	result_analysis(source, compressed_file, &clocks, run_compress);
+	if (!result_analysis(source, compressed_file, &clocks, run_compress))
+		printf("\nОшибка вывода аналитики");
 
 cleanup:
 
@@ -366,7 +377,9 @@ static void run_decompress_file(const char* input_path, const char* output_path)
 	printf("\n\nРаспакованный файл лежит по пути: %s", output_path);
 
 	fflush(decompressed_file);
-	result_analysis(compressed_file, decompressed_file, &clocks, run_decompress);
+	if (!result_analysis(compressed_file, decompressed_file, &clocks, run_decompress))
+		printf("\nОшибка вывода аналитики");
+
 cleanup:
 
 	if (compressed_file)	fclose(compressed_file);
@@ -377,7 +390,7 @@ cleanup:
 	@brief Функция создания пути для сжатого файла и его сжатие
 	@param input_path - путь исходного файла
 */
-static void compress_interface(const char* input_path, int extension_flag) {
+static void compress_interface(const char* input_path, PathStatus_e extension_flag) {
 	// на вход подаётся корректный путь к файлу (гарантируется enter_path())
 
 	// создаём путь для записи сжатого файла
@@ -400,7 +413,7 @@ static void compress_interface(const char* input_path, int extension_flag) {
 	strncat(output_path, COMPRESSED_EXTENSION, LEN_COMP_EXT);
 	
 	// тут щас будем выделять память, таблицу все дела пупупу
-	run_compress_file(input_path, output_path);
+	run_compress_file(input_path, output_path, extension_flag);
 }
 
 /*
@@ -418,27 +431,22 @@ static void decompress_interface(const char* input_path) {
 	}
 	point = NULL;
 	
-
-	// [TODO] внести информацию о формате исходного файла в сам алгоритм сжатия (когда замерджим ветку с главной)
-	// вытекает проблема в будущем: если перенесем информацию о формате исходника в decompress_file_v1(), то 
-	// мы не сможем тут проверить длину заранее.
-	// придется либо отдельно вызывать файловый поток чтобы читать часть оверхеда здесь вручную, либо добавлять отдельную функцию
-	// что то вроде read_overhead_file(), юзать ее здесь, но тогда и править алгоритм decompress_file_v1().
-	char format[MAX_FORMAT_LEN];
-
-	printf("\nВведите формат файла для распаковки (с точкой): ");
-	while (fgets(format, MAX_FORMAT_LEN, stdin) == NULL) {
-		printf("\nОшибка записи формата. Повторите попытку.");
-		printf("\nВведите формат файла для распаковки (с точкой): ");
-
-		// чистим буфер
-		int c;
-		while ((c = getchar()) != '\n' && c != EOF);
+	// узнаем расширение файла
+	FILE* file = fopen(input_path, "rb");
+	if (!file) {
+		printf("Ошибка открытия файла для чтения служебной информации.");
+		return;
 	}
 
-	format[strcspn(format, "\n")] = '\0';
+	char extension[MAX_EXT_LENGTH] = { 0 };
+	if (read_overhead(file, extension, NULL, NULL) != 0) {
+		printf("Ошибка чтения расширения исходного файла.");
+		fclose(file);
+		return;
+	}
+	fclose(file);
 
-	// все что выше удалю потом! (выполнение [TODO])
+	// формируем выходной путь
 	char output_path[MAX_PATH_LEN];
 	snprintf(output_path, sizeof(output_path), "%s", input_path);
 
@@ -448,12 +456,13 @@ static void decompress_interface(const char* input_path) {
 	*point = '\0';
 	
 	// проверка длины
-	if (strlen(output_path) + strlen(format) + 1 > MAX_PATH_LEN) {
+	size_t ext_len = strlen(extension);
+	if (strlen(output_path) + ext_len + 1 > MAX_PATH_LEN) {
 		printf("\nОшибка: путь слишком длинный");
 		return;
 	}
 
-	strncat(output_path, format, strlen(format));
+	strncat(output_path, extension, ext_len);
 
 	run_decompress_file(input_path, output_path);
 }

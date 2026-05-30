@@ -9,6 +9,38 @@ enum {
 	bit_buf_size = 8
 };
 
+/*
+	@brief Запись служебной информации для корректной распаковки файла
+	@param ostream - поток для записи (сжатый файл)
+	@param extension - строка расширения файла
+	@param arr - массив частот
+	@param file_size - размер файла в байтах
+	@return 0 - успешная запись, 1 - неудачная запись расширения, 2 - неудачная запись длины файла, 3 - неудачная запись таблицы частот,
+	-1 - ошибка выставления каретки
+*/
+static int write_overhead(FILE* ostream, char extension[MAX_EXT_LENGTH], size_t* file_size, const size_t arr[ASCII_ALP_SIZE]) {
+	assert(ostream != NULL && extension != NULL && arr != NULL && file_size != NULL);
+	if (fseek(ostream, 0, SEEK_SET)) return -1;
+
+	// записываем расширение
+	if (fwrite(extension, sizeof(*extension), MAX_EXT_LENGTH, ostream) != MAX_EXT_LENGTH) {
+		return 1;
+	}
+
+	// считаем количество байт файла
+	for (size_t i = 0; i < ASCII_ALP_SIZE; i++) {
+		*file_size += arr[i];
+	}
+	if (fwrite(file_size, sizeof(*file_size), 1, ostream) != 1)
+		return 2;
+	
+	// записываем таблицу частот (итого оверхед чуть больше 2кб)
+	if (fwrite(arr, sizeof(*arr), ASCII_ALP_SIZE, ostream) != ASCII_ALP_SIZE)
+		return 3;
+
+	return 0;
+}
+
 int frequency_counting(FILE* stream, size_t arr[ASCII_ALP_SIZE]) {
 	if (!stream || !arr) return 0;
 	
@@ -123,31 +155,30 @@ static void fill_bits(
 }
 
 int compress_file_v1(
-	FILE* istream, 
-	FILE* ostream, 
+	FILE* istream,
+	FILE* ostream,
 	const size_t arr[ASCII_ALP_SIZE],
-	CodeTable* table
+	CodeTable* table,
+	char extension[MAX_EXT_LENGTH]
 ) {
 	if (istream == NULL || ostream == NULL || arr == NULL || table == NULL) 
 		return 0;
 
 	// выставляем каретки в начало для корректного чтения
-	fseek(istream, 0, SEEK_SET);
-	fseek(ostream, 0, SEEK_SET);
+	if (fseek(istream, 0, SEEK_SET)) return 0;
+	if (fseek(ostream, 0, SEEK_SET)) return 0;
 
-	// в начало оверхеда запишем размер файла (в байтах)
-	size_t size_file = 0;
-	for (size_t i = 0; i < ASCII_ALP_SIZE; i++) {
-		size_file += arr[i];
+	
+
+	// записываем оверхед
+	size_t file_size = 0;
+
+	if (write_overhead(ostream, extension, &file_size, arr) != 0) {
+		return 0;
 	}
-	if (fwrite(&size_file, sizeof(size_file), 1, ostream) != 1)
-		return 0;
 
-	// записываем таблицу частот (итого оверхед чуть больше 2кб)
-	if (fwrite(arr, sizeof(*arr), ASCII_ALP_SIZE, ostream) != ASCII_ALP_SIZE) 
-		return 0;
-
-	fill_bits(istream, ostream, table, size_file);
+	// заполняем файл сжатым кодом
+	fill_bits(istream, ostream, table, file_size);
 	
 	return 1;
 }

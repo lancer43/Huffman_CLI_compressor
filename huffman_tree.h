@@ -4,6 +4,7 @@
 #include <stddef.h>
 
 #define ASCII_ALP_SIZE 256
+#define MAX_EXT_LENGTH 32
 
 
 typedef struct Node {
