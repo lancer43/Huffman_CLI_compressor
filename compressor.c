@@ -41,15 +41,41 @@ static int write_overhead(FILE* ostream, char extension[MAX_EXT_LENGTH], size_t*
 	return 0;
 }
 
+/*
+	Что здесь надо переделать? [ПЕРЕДЕЛАНО]
+
+	В этой функции мы читаем каждый символ из файла чтобы подсчитать количество вхождений каждого символа в файле
+	Сейчас вызов fgetc() для чтения 1 символа может заставлять программу производить системный вызов ради каждого байта - это долго
+
+	- создать буфер на стеке 4кб (т.к. обычно системный буфер имеет размер 4кб)
+	- заполнить стековый буфер до полного одним вызовом fread() (эквивалентно 1 системному вызову)
+	- читать и раскладывать символы до тех пор, пока не опустошится стековый буфер
+	- заполнить буфер снова, и повторять цикл до тех пор, пока не дойдем до конца файла
+
+*/
+
 int frequency_counting(FILE* stream, size_t arr[ASCII_ALP_SIZE]) {
 	if (!stream || !arr) return 0;
+
+	// устанавливаем каретку в начальное положение
+	if (fseek(stream, 0, SEEK_SET)) return 0;
 	
+	// очищаем массив 
 	memset(arr, 0, ASCII_ALP_SIZE * sizeof(*arr));
 	
-	int ch;
-	while ((ch = fgetc(stream)) != EOF) {
-		arr[(unsigned char)ch] += 1;
+	// создаем стековый буфер
+	unsigned char buf[READ_BUFFER_SIZE] = { 0 };
+	size_t count = 0; // переменная для записи числа прочитанных элементов
+
+	// читаем с диска большими порциями и побайтово читаем буфер для экономии тактов
+	while ((count = fread(buf, sizeof(*buf), READ_BUFFER_SIZE, stream)) > 0) {
+		for (size_t i = 0; i < count; i++) {
+			arr[buf[i]] += 1;
+		}
 	}
+
+	if (ferror(stream))
+		return 0;
 
 	return 1;
 }
@@ -114,26 +140,57 @@ static void fill_bits(
 	FILE* istream, 
 	FILE* ostream, 
 	CodeTable* table, 
-	size_t size_file
+	const size_t size_file
 ) {
 	assert(istream != NULL && ostream != NULL && table != NULL);
 
-	unsigned char buf = 0;
+	unsigned char buf = 0; // буфер для накопления битов
 	unsigned char fr_len = bit_buf_size; // количество свободных битов в buf
-	unsigned char ch = 0;
-	int cur_len = 0;
-	unsigned long long cur_code = 0;
+	unsigned char ch = 0; // текущий символ из файла
+	int cur_len = 0; // длина бинарного кода текущего символа (в битах)
+	unsigned long long cur_code = 0; // бинарный код текущего символа
 
+	// стековые буферы для экономии тактов (меньше системных вызовов)
+	unsigned char read_buf[READ_BUFFER_SIZE] = { 0 };
+	unsigned char write_buf[WRITE_BUFFER_SIZE] = { 0 };
+
+	// указатели для записи в стековые буферы
+	unsigned char* read_ptr = read_buf;
+	unsigned char* write_ptr = write_buf;
+
+	size_t read_count = 0;
+	// первоначально надо заполнить буфер
+	// fread(read_buf, sizeof(*read_buf), READ_BUFFER_SIZE, istream);
+	
 	for (size_t i = 0; i < size_file; i++) {
-		ch = (unsigned char)fgetc(istream);
-		cur_len = table->symbols[ch].length;
-		cur_code = table->symbols[ch].bin_code;
 
+		// если указатель ушел за пределы - возвращаем на место и читаем новую порцию
+		if (read_ptr >= &read_buf[read_count]) {
+			read_ptr = read_buf;
+			read_count = fread(read_buf, sizeof(*read_buf), READ_BUFFER_SIZE, istream);
+
+			if (read_count == 0) break; // данные закончились
+		}
+
+		// читаем символ из стекового буфера
+		ch = *read_ptr++;
+		cur_len = table->symbols[ch].length; // длина этого символа в таблице кодов (в битах)
+		cur_code = table->symbols[ch].bin_code; // код этого символа в таблице кодов
+
+		// пока в буфере (его размер 1 байт) не хватает бит для записи текущего кода
 		while (fr_len < cur_len) {
-			// заполняем буфер максимально насколько возможно частью кода символа
+
+			// заполняем буфер максимально насколько возможно частью кода текущего символа
 			buf = (unsigned char)(buf << fr_len) | (cur_code >> (cur_len - fr_len));
 
-			putc(buf, ostream);
+			// сбрасываем накопленный байт в выходной буфер
+			*write_ptr++ = buf;
+
+			// если накопился полный буфер - отправляем на диск
+			if (write_ptr == &write_buf[WRITE_BUFFER_SIZE]) {
+				write_ptr = write_buf;
+				fwrite(write_buf, sizeof(*write_buf), WRITE_BUFFER_SIZE, ostream);
+			}
 			
 			// маской чистим использованные биты
 			cur_code = cur_code & ((1ULL << (cur_len - fr_len)) - 1);
@@ -148,10 +205,14 @@ static void fill_bits(
 		fr_len -= cur_len;
 	}
 
+	// если в байт-буфере что то осталось - дозаполняем нулями и сбрасываем в стековый буфер 
 	if (fr_len < bit_buf_size) {
 		buf = buf << fr_len;
-		putc(buf, ostream);
+		*write_ptr++ = buf;
 	}
+
+	// сброс остатков на диск
+	fwrite(write_buf, sizeof(*write_buf), write_ptr - write_buf, ostream);
 }
 
 int compress_file_v1(

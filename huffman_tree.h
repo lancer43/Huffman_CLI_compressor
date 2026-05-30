@@ -6,6 +6,9 @@
 #define ASCII_ALP_SIZE 256
 #define MAX_EXT_LENGTH 32
 
+#define READ_BUFFER_SIZE	4096
+#define WRITE_BUFFER_SIZE	4096
+
 
 typedef struct Node {
 	struct Node* right; // указатель на правый лепесток

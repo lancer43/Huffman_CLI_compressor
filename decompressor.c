@@ -48,6 +48,26 @@ int read_overhead(FILE* istream, char extension[MAX_EXT_LENGTH], size_t* file_si
 	return 0;
 }
 
+
+// [SEARCH] заменить fputc
+/*
+	Что надо переделать?
+	Сейчас здесь происходит вызов fgetc() и fputc() на каждый отдельный байт для чтения файла
+	Каждый вызов функции потенциально влечет за собой системный вызов, который отбирает много тактов процессора
+	Ради каждого байта этот подход является крайне неэффективным, поэтому планируется переписать алгоритм следующим образом
+
+	Чтение
+	- Создается буфер на стеке размером 4кб (т.к. по умолчанию системный буфер 4кб)
+	- за 1 системный вызов читается 4кб в стековый буфер через fread(), а затем побайтово информация забирается оттуда
+	- при опустошении стекового буфера чтение повторяется, цикл происходит до тех пор, пока файл не закончится
+
+	Запись
+	- Создается буфер на стеке размером 4кб (т.к. по умолчанию системный буфер 4кб)
+	- буфер заполняется расшифрованными байтами файла до упора
+	- за 1 системный вызов через fwrite() происходит запись буфера в файл
+	- после записи буфер очищается и чтение происходит заново до тех пор, пока файл не закончится
+*/
+
 /*
 	@brief Алгоритм расшифровки бинарного файла через обход дерева
 	@param istream - входной поток
@@ -63,54 +83,91 @@ static void huffman_decompress(
 ) {
 	assert(istream != NULL && ostream != NULL && root != NULL);
 
-	unsigned short buf = 0;
+	// если был пустой файл до сжатия
+	if (file_size == 0) return;
+
+	unsigned short buf = 0; // двухбайтовый буфер для накопления битов
 	unsigned char bits_in_buf = 0;
 
-	Node* cur = root;
+	// стековые буферы для экономии тактов процессора (меньше системных вызовов)
+	unsigned char read_buf[READ_BUFFER_SIZE] = { 0 };
+	unsigned char write_buf[WRITE_BUFFER_SIZE] = { 0 };
 
-	// читаем буфер до полного
-	for (size_t i = 0; i < sizeof(buf); i++) {
-		int byte = fgetc(istream);
-		if (byte == EOF) break; // на всякий, но вроде можно убрать
+	// указатели для работы со стековыми буферами
+	unsigned char* read_ptr = read_buf;
+	unsigned char* write_ptr = write_buf;
+
+	size_t read_count = 0; // счетчик прочитанных в read_buf элементов
+
+	Node* cur_node = root; // текущий узел
+
+	read_count = fread(read_buf, sizeof(*read_buf), READ_BUFFER_SIZE, istream);
+	
+	// читаем двухбайтовый буфер до полного
+	for (size_t i = 0; i < sizeof(buf) && i < read_count; i++) {
+		int byte = *read_ptr++;
 
 		buf = (buf << bits_in_byte) | byte;
 		bits_in_buf += bits_in_byte;
 	}
 
+	// известно, что в файле file_size байт, следовательно проходим нужное количество раз
 	for (size_t i = 0; i < file_size; i++) {
-		cur = root;
+		cur_node = root;
 
 		// проверяем только правый, т.к. без него не сущ. левый и наоборот
-		while (cur->right != NULL) {
-			// если из нашего буфера прочитано более байта дозаполняем
+		while (cur_node->right != NULL) {
+
+			// если из нашего двухбайтового буфера прочитано более байта - дозаполняем
 			if (bits_in_buf < bits_in_byte) {
-				int byte = fgetc(istream);
-				if (byte != EOF) { // читаем, только если там реальный байт
+
+				// если байты в стековом буфере закончились - возвращаем указатель в начало и читаем новую порцию с диска
+				if (read_ptr >= &read_buf[read_count]) {
+					read_ptr = read_buf;
+
+					read_count = fread(read_buf, sizeof(*read_buf), READ_BUFFER_SIZE, istream);
+				}
+
+				// если хоть что то прочиталось - добавляем в двухбайтовый буфер
+				if (read_count > 0) {
+					int byte = *read_ptr++;
+
 					buf = (buf << bits_in_byte) | byte;
 					bits_in_buf += bits_in_byte;
 				}
-				// если EOF — мы просто ничего не делаем и спокойно 
-				// разбираем те биты, что ОСТАЛИСЬ в буфере от прошлого чтения
 			}
 
 			// прочитали самый левый ВАЛИДНЫЙ бит
 			unsigned char bit = (buf >> (bits_in_buf - 1))&1;
-			// вспомогательная переменная для очистки головы
-			unsigned char shift = bits_capacity_buf - bits_in_buf;
+			
+			unsigned char shift = bits_capacity_buf - bits_in_buf; // вспомогательная переменная для очистки головы
+
 			// чистим тот левый ВАЛИДНЫЙ бит (нынешнюю голову)
 			buf = (buf << shift) >> shift;
 			// уменьшаем длину ВАЛИДНЫХ битов (слева голова - след. бит, левее нее НУЛИ)
 			bits_in_buf--;
 
+			// спуск по дереву (1 - в правый лист, 0 - в левый)
 			if (bit == 1) {
-				cur = cur->right;
+				cur_node = cur_node->right;
 			}
 			else {
-				cur = cur->left;
+				cur_node = cur_node->left;
 			}
 		}
-		fputc(cur->sym, ostream);
+
+		// записываем символ в стековый буфер 
+		*write_ptr++ = cur_node->sym;
+
+		// если стековый буфер заполнился - порцией выгружаем его на диск
+		if (write_ptr >= &write_buf[WRITE_BUFFER_SIZE]) {
+			write_ptr = write_buf;
+			fwrite(write_buf, sizeof(*write_buf), WRITE_BUFFER_SIZE, ostream);
+		}
 	}
+
+	// сброс остатков на диск
+	fwrite(write_buf, sizeof(*write_buf), write_ptr - write_buf, ostream);
 }
 
 int decompress_file_v1(
