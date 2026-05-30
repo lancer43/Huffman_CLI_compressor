@@ -117,14 +117,26 @@ static int result_analysis(FILE* istream, FILE* ostream, Clocks_s* clocks, Mode_
 	stats.compress_time = (double)(clocks->stop_total - clocks->start_compress) / CLOCKS_PER_SEC;
 	stats.total_time = stats.freq_time + stats.bincode_time + stats.compress_time;
 
-	if (fseek(istream, 0, SEEK_END)) return 0;
-	if (fseek(ostream, 0, SEEK_END)) return 0;
+	if (fseek(istream, 0, SEEK_END)) {
+		perror("Ошибка установления каретки в конечное положение");
+		return 0;
+	}
+	if (fseek(ostream, 0, SEEK_END)) {
+		perror("Ошибка установления каретки в конечное положение");
+		return 0;
+	}
 
 	stats.in_size = ftell(istream);
 	stats.out_size = ftell(ostream);
 
-	if (fseek(istream, 0, SEEK_SET)) return 0;
-	if (fseek(ostream, 0, SEEK_SET)) return 0;
+	if (fseek(istream, 0, SEEK_SET)) {
+		perror("Ошибка установления каретки в начальное положение");
+		return 0;
+	}
+	if (fseek(ostream, 0, SEEK_SET)) {
+		perror("Ошибка установления каретки в начальное положение");
+		return 0;
+	}
 
 	if (mode == run_compress) {
 		stats.coefficient = (double)stats.in_size / stats.out_size;
@@ -329,7 +341,10 @@ static void run_compress_file(const char* input_path, const char* output_path, P
 	
 	printf("\n\nСжатый файл лежит по пути: '%s'", output_path);
 
-	fflush(compressed_file);
+	if (fflush(compressed_file) == EOF) {
+		perror("Ошибка сброса данных на диск");
+		goto cleanup;
+	}
 	if (!result_analysis(source, compressed_file, &clocks, run_compress))
 		printf("\nОшибка вывода аналитики");
 
@@ -376,7 +391,11 @@ static void run_decompress_file(const char* input_path, const char* output_path)
 	printf("\nФайл распакован успешно!");
 	printf("\n\nРаспакованный файл лежит по пути: %s", output_path);
 
-	fflush(decompressed_file);
+	if (fflush(decompressed_file) == EOF) {
+		perror("Ошибка сброса данных на диск");
+		goto cleanup;
+	}
+
 	if (!result_analysis(compressed_file, decompressed_file, &clocks, run_decompress))
 		printf("\nОшибка вывода аналитики");
 
@@ -419,7 +438,11 @@ static void rewrite_file_name(char* path) {
 		char extension[MAX_PATH_LEN] = "\0";
 		char* ext_ptr = strrchr(path, '.');
 		if (ext_ptr != NULL) {
-			strncpy(extension, ext_ptr, sizeof(extension) - 1);
+
+			int written = snprintf(extension, sizeof(extension), "%s", ext_ptr);
+			if (written < 0 || written > sizeof(extension)) {
+				printf("\nОшибка записи расширения во вспомогательный массив.");
+			}
 		}
 
 		// ищем последний слэш в текущем пути
@@ -429,8 +452,11 @@ static void rewrite_file_name(char* path) {
 		if (slash_ptr != NULL) {
 			size_t dir_len = slash_ptr - path + 1;
 			if (dir_len < MAX_PATH_LEN) {
-				strncpy(dir_path, path, dir_len);
-				dir_path[dir_len] = '\0';
+				
+				int written = snprintf(dir_path, dir_len + 1, "%s", path);
+				if (written < 0 || written > sizeof(extension)) {
+					printf("\nОшибка записи директории во вспомогательный массив.");
+				}
 			}
 		}
 
@@ -444,8 +470,11 @@ static void rewrite_file_name(char* path) {
 		}
 
 		// перезаписываем исходный путь
-		strncpy(path, temp_path, MAX_PATH_LEN - 1);
-		path[MAX_PATH_LEN - 1] = '\0';
+		written = snprintf(path, MAX_PATH_LEN, "%s", temp_path);
+
+		if (written < 0 || written > MAX_PATH_LEN) {
+			printf("\nОшибка записи нового пути к файлу.");
+		}
 
 		flag = 1;
 	}
@@ -521,7 +550,7 @@ static void compress_interface(const char* input_path, PathStatus_e extension_fl
 
 	// создаём путь для записи сжатого файла
 	char output_path[MAX_PATH_LEN];
-	snprintf(output_path, sizeof(output_path), "%s", input_path);
+	snprintf(output_path, sizeof(output_path), "%s", input_path); // проверка не требуется - строки одинаковой длины гарантированно
 
 	// если расширение у файла было, то удаляем его
 	if (extension_flag == PATH_VALID_WITH_EXTENSION) {
@@ -577,7 +606,7 @@ static void decompress_interface(const char* input_path) {
 
 	// формируем выходной путь
 	char output_path[MAX_PATH_LEN];
-	snprintf(output_path, sizeof(output_path), "%s", input_path);
+	snprintf(output_path, sizeof(output_path), "%s", input_path); // проверка не требуется - строки одинаковой длины гарантированно
 
 	// убираем формат с точкой
 	point = strrchr(output_path, '.');
@@ -592,6 +621,7 @@ static void decompress_interface(const char* input_path) {
 	}
 
 	strncat(output_path, extension, ext_len);
+
 
 	if (!check_existence_file(output_path, PATH_VALID_WITH_EXTENSION)) return;
 

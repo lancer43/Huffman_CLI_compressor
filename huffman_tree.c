@@ -1,20 +1,20 @@
-#include "huffman_tree.h"
+п»ї#include "huffman_tree.h"
 
 #include <stddef.h>
 #include <stdlib.h>
 
 typedef struct {
-	Node** buffer; // указатель на массив указателей на узлы дерева (Node - узел дерева)
-	size_t head; // id головы очереди в массиве queue (будет меняться функцией queue_pop())
-	size_t tail; // id хвоста очереди в массиве queue (будет меняться функцией queue_push())
-	size_t capacity; // максимальная вместимость очереди (защита от переполнения)
+	Node** buffer; // СѓРєР°Р·Р°С‚РµР»СЊ РЅР° РјР°СЃСЃРёРІ СѓРєР°Р·Р°С‚РµР»РµР№ РЅР° СѓР·Р»С‹ РґРµСЂРµРІР° (Node - СѓР·РµР» РґРµСЂРµРІР°)
+	size_t head; // id РіРѕР»РѕРІС‹ РѕС‡РµСЂРµРґРё РІ РјР°СЃСЃРёРІРµ queue (Р±СѓРґРµС‚ РјРµРЅСЏС‚СЊСЃСЏ С„СѓРЅРєС†РёРµР№ queue_pop())
+	size_t tail; // id С…РІРѕСЃС‚Р° РѕС‡РµСЂРµРґРё РІ РјР°СЃСЃРёРІРµ queue (Р±СѓРґРµС‚ РјРµРЅСЏС‚СЊСЃСЏ С„СѓРЅРєС†РёРµР№ queue_push())
+	size_t capacity; // РјР°РєСЃРёРјР°Р»СЊРЅР°СЏ РІРјРµСЃС‚РёРјРѕСЃС‚СЊ РѕС‡РµСЂРµРґРё (Р·Р°С‰РёС‚Р° РѕС‚ РїРµСЂРµРїРѕР»РЅРµРЅРёСЏ)
 } Queue;
 
 /*
-	@brief Функция добавления элемента в хвост очереди QueueNode
-	@param queue - указатель на очередь
-	@param node - указатель на ноду, которую хотим добавить
-	@return 1 - успех, 0 - ошибка
+	@brief Р¤СѓРЅРєС†РёСЏ РґРѕР±Р°РІР»РµРЅРёСЏ СЌР»РµРјРµРЅС‚Р° РІ С…РІРѕСЃС‚ РѕС‡РµСЂРµРґРё QueueNode
+	@param queue - СѓРєР°Р·Р°С‚РµР»СЊ РЅР° РѕС‡РµСЂРµРґСЊ
+	@param node - СѓРєР°Р·Р°С‚РµР»СЊ РЅР° РЅРѕРґСѓ, РєРѕС‚РѕСЂСѓСЋ С…РѕС‚РёРј РґРѕР±Р°РІРёС‚СЊ
+	@return 1 - СѓСЃРїРµС…, 0 - РѕС€РёР±РєР°
 */
 static int queue_push(Queue* queue, Node* node) {
 	if (queue->tail >= queue->capacity) return 0;
@@ -26,9 +26,9 @@ static int queue_push(Queue* queue, Node* node) {
 }
 
 /*
-	@brief Функция удаления элемента из головы очереди
-	@param queue - указатель на очередь, откуда удаляем элемент
-	@return возвращает указатель на удалённый узел дерева
+	@brief Р¤СѓРЅРєС†РёСЏ СѓРґР°Р»РµРЅРёСЏ СЌР»РµРјРµРЅС‚Р° РёР· РіРѕР»РѕРІС‹ РѕС‡РµСЂРµРґРё
+	@param queue - СѓРєР°Р·Р°С‚РµР»СЊ РЅР° РѕС‡РµСЂРµРґСЊ, РѕС‚РєСѓРґР° СѓРґР°Р»СЏРµРј СЌР»РµРјРµРЅС‚
+	@return РІРѕР·РІСЂР°С‰Р°РµС‚ СѓРєР°Р·Р°С‚РµР»СЊ РЅР° СѓРґР°Р»С‘РЅРЅС‹Р№ СѓР·РµР» РґРµСЂРµРІР°
 */
 static Node* queue_pop(Queue* queue) {
 	if (queue->head == queue->tail) return NULL;
@@ -53,7 +53,7 @@ static int compare_nodes(const void* a, const void* b) {
 }
 
 static Node* extract_min(Queue* q1, Queue* q2) {
-	// элементарные случаи когда очередь пустая
+	// СЌР»РµРјРµРЅС‚Р°СЂРЅС‹Рµ СЃР»СѓС‡Р°Рё РєРѕРіРґР° РѕС‡РµСЂРµРґСЊ РїСѓСЃС‚Р°СЏ
 	int q1_empty = (q1->head >= q1->tail);
 	int q2_empty = (q2->head >= q2->tail);
 
@@ -81,16 +81,16 @@ size_t counting_used_syms(const size_t arr[ASCII_ALP_SIZE]) {
 }
 
 Node* build_huffman_tree(const size_t arr[ASCII_ALP_SIZE], Node** nodes_array) {
-	// считаем сколько символов из таблицы используется
+	// СЃС‡РёС‚Р°РµРј СЃРєРѕР»СЊРєРѕ СЃРёРјРІРѕР»РѕРІ РёР· С‚Р°Р±Р»РёС†С‹ РёСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ
 	size_t count = counting_used_syms(arr); 
 	if (count == 0) return NULL;
 	
-	// выделяем память под максимально возможное количество узлов
+	// РІС‹РґРµР»СЏРµРј РїР°РјСЏС‚СЊ РїРѕРґ РјР°РєСЃРёРјР°Р»СЊРЅРѕ РІРѕР·РјРѕР¶РЅРѕРµ РєРѕР»РёС‡РµСЃС‚РІРѕ СѓР·Р»РѕРІ
 	Node* nodes = (Node*)calloc(2 * count - 1, sizeof(Node));
 	*nodes_array = nodes;
 	if (nodes == NULL) return NULL;
 
-	// делаем два буфера под очереди и заполняем узлами (узлы формируем параллельно)
+	// РґРµР»Р°РµРј РґРІР° Р±СѓС„РµСЂР° РїРѕРґ РѕС‡РµСЂРµРґРё Рё Р·Р°РїРѕР»РЅСЏРµРј СѓР·Р»Р°РјРё (СѓР·Р»С‹ С„РѕСЂРјРёСЂСѓРµРј РїР°СЂР°Р»Р»РµР»СЊРЅРѕ)
 	Node* buf_q1[ASCII_ALP_SIZE] = { 0 };
 	Node* buf_q2[ASCII_ALP_SIZE] = { 0 };
 
@@ -110,15 +110,15 @@ Node* build_huffman_tree(const size_t arr[ASCII_ALP_SIZE], Node** nodes_array) {
 	size_t node_i = 0;
 	for (size_t i = 0; i < ASCII_ALP_SIZE; i++) {
 		if (arr[i] > 0) {
-			nodes[node_i].freq = arr[i]; // частота
-			nodes[node_i].sym = (unsigned char)i; // символ
+			nodes[node_i].freq = arr[i]; // С‡Р°СЃС‚РѕС‚Р°
+			nodes[node_i].sym = (unsigned char)i; // СЃРёРјРІРѕР»
 
 			queue_push(&queue1, &nodes[node_i]);
 			node_i++;
 		}
 	}
 
-	// алгоритм Хаффмана на 2 очередях
+	// Р°Р»РіРѕСЂРёС‚Рј РҐР°С„С„РјР°РЅР° РЅР° 2 РѕС‡РµСЂРµРґСЏС…
 	qsort(queue1.buffer, queue1.tail, sizeof(Node*), compare_nodes);
 
 	while (queue_size(&queue1) + queue_size(&queue2) > 1) {
@@ -132,7 +132,7 @@ Node* build_huffman_tree(const size_t arr[ASCII_ALP_SIZE], Node** nodes_array) {
 
 		queue_push(&queue2, parent);
 	}
-	// через минимум для гарантии возврата
+	// С‡РµСЂРµР· РјРёРЅРёРјСѓРј РґР»СЏ РіР°СЂР°РЅС‚РёРё РІРѕР·РІСЂР°С‚Р°
 	return extract_min(&queue1, &queue2);
 }
 
