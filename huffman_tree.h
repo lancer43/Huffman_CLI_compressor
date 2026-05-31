@@ -3,8 +3,9 @@
 
 #include <stddef.h>
 
-#define ASCII_ALP_SIZE 256
-#define MAX_EXT_LENGTH 32
+#define ASCII_ALP_SIZE		256
+#define MAX_EXT_LENGTH		32
+#define MAX_PATH_LEN		1024
 
 #define READ_BUFFER_SIZE	4096
 #define WRITE_BUFFER_SIZE	4096

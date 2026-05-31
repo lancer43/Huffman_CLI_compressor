@@ -6,7 +6,7 @@
 
 
 
-void create_file(void);
+int run_autotest_files(void);
 
 
 #endif

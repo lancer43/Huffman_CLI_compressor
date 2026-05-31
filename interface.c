@@ -12,17 +12,18 @@
 #include <string.h>
 #include <assert.h>
 #include <time.h>
+#include <stdlib.h>
 
-#define MAX_PATH_LEN			1024
+
 
 #define COMPRESSED_EXTENSION	".huf"
 #define LEN_COMP_EXT			4
 
 typedef enum {
-	exit,
-	run_compress,
-	run_decompress,
-	run_autotest
+	RUN_EXIT,
+	RUN_COMPRESS,
+	RUN_DECOMPRESS,
+	RUN_AUTOTEST
 } Mode_e;
 
 typedef enum {
@@ -62,8 +63,8 @@ static void show_menu(void) {
 	printf("\n\nВыберите действие:");
 	printf("\n1. Сжать файл");
 	printf("\n2. Распаковать файл");
-	printf("\n3.Запуск автотеста");
-	printf("\n0.Выход");
+	printf("\n3. Запуск автотеста");
+	printf("\n0. Выход");
 }
 /*
 	@brief Вывод анализа работы архиватора
@@ -71,11 +72,11 @@ static void show_menu(void) {
 	@param mode - режим работы архиватора (сжатие/распаковка)
 */
 static void show_analysis(AlgorithmEfficiency_s* stats, const Mode_e mode) {
-	assert(mode == run_compress || mode == run_decompress);
+	assert(mode == RUN_COMPRESS || mode == RUN_DECOMPRESS);
 	assert(stats != NULL);
 	
 	switch (mode) {
-	case run_compress:
+	case RUN_COMPRESS:
 		printf("\n\n========== АНАЛИЗ СЖАТИЯ ФАЙЛА ==========");
 
 		printf("\n\nРазмер исходного файла: %zu байт", stats->in_size);
@@ -88,7 +89,7 @@ static void show_analysis(AlgorithmEfficiency_s* stats, const Mode_e mode) {
 		printf("\n\t- Сжатие файла заняло %.3lf сек.", stats->compress_time);
 		break;
 
-	case run_decompress:
+	case RUN_DECOMPRESS:
 		printf("\n\n========== АНАЛИЗ РАСПАКОВКИ ФАЙЛА ==========");
 
 		printf("\n\nРазмер сжатого файла: %zu байт", stats->in_size);
@@ -110,7 +111,7 @@ static void show_analysis(AlgorithmEfficiency_s* stats, const Mode_e mode) {
 */
 static int result_analysis(FILE* istream, FILE* ostream, Clocks_s* clocks, Mode_e mode) {
 	assert(istream != NULL && ostream != NULL && clocks != NULL);
-	assert(mode == run_compress || mode == run_decompress);
+	assert(mode == RUN_COMPRESS || mode == RUN_DECOMPRESS);
 
 	AlgorithmEfficiency_s stats = { 0 };
 
@@ -141,10 +142,10 @@ static int result_analysis(FILE* istream, FILE* ostream, Clocks_s* clocks, Mode_
 		return 0;
 	}
 
-	if (mode == run_compress) {
+	if (mode == RUN_COMPRESS) {
 		stats.coefficient = (double)stats.in_size / stats.out_size;
 	}
-	if (mode == run_decompress) {
+	if (mode == RUN_DECOMPRESS) {
 		stats.coefficient = (double)stats.out_size / stats.in_size;
 	}
 
@@ -348,7 +349,7 @@ static void run_compress_file(const char* input_path, const char* output_path, P
 		perror("Ошибка сброса данных на диск");
 		goto cleanup;
 	}
-	if (!result_analysis(source, compressed_file, &clocks, run_compress))
+	if (!result_analysis(source, compressed_file, &clocks, RUN_COMPRESS))
 		printf("\nОшибка вывода аналитики");
 
 cleanup:
@@ -399,7 +400,7 @@ static void run_decompress_file(const char* input_path, const char* output_path)
 		goto cleanup;
 	}
 
-	if (!result_analysis(compressed_file, decompressed_file, &clocks, run_decompress))
+	if (!result_analysis(compressed_file, decompressed_file, &clocks, RUN_DECOMPRESS))
 		printf("\nОшибка вывода аналитики");
 
 cleanup:
@@ -658,7 +659,7 @@ void run_interface_huf(void) {
 
 		switch (choice) {
 		
-			case run_compress: {
+			case RUN_COMPRESS: {
 				char path[MAX_PATH_LEN];
 			
 				int extension_flag = enter_path(path);
@@ -668,7 +669,7 @@ void run_interface_huf(void) {
 				break;
 			}
 
-			case run_decompress: {
+			case RUN_DECOMPRESS: {
 				char path[MAX_PATH_LEN];
 
 				enter_path(path);
@@ -678,12 +679,13 @@ void run_interface_huf(void) {
 				break;
 			}
 
-			case run_autotest:
+			case RUN_AUTOTEST:
 				// заглушка
-				create_file();
+				srand(time(NULL));
+				run_autotest_files();
 				break;
 
-			case exit:
+			case RUN_EXIT:
 				printf("\nВыход...");
 				flag = 1;
 				break;

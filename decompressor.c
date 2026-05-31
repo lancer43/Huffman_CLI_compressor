@@ -193,7 +193,7 @@ static int huffman_decompress(
 			
 			write_ptr = write_buf;
 		}
-		return 1;
+		
 	}
 
 	// сброс остатков на диск
@@ -205,6 +205,7 @@ static int huffman_decompress(
 			return 0;
 		}
 	}
+	return 1;
 }
 
 int decompress_file_v1(
