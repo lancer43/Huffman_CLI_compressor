@@ -1,5 +1,5 @@
-﻿#ifndef INTERFACE_HUF
-#define INTERFACE_HUF
+﻿#ifndef HUF_INTERFACE
+#define HUF_INTERFACE
 
 /*
 	ИДЕЯ

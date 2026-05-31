@@ -1,5 +1,5 @@
-﻿#ifndef CLI_DECOMPRESSOR
-#define CLI_DECOMPRESSOR
+﻿#ifndef HUF_DECOMPRESSOR
+#define HUF_DECOMPRESSOR
 
 #include <stdio.h>
 

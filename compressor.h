@@ -1,5 +1,5 @@
-﻿#ifndef CLI_COMPRESSOR
-#define CLI_COMPRESSOR
+﻿#ifndef HUF_COMPRESSOR
+#define HUF_COMPRESSOR
 
 #include "huffman_tree.h"
 

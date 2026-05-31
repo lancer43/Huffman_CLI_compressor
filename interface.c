@@ -4,6 +4,7 @@
 // модули которыми мы управляем
 #include "compressor.h"
 #include "decompressor.h"
+#include "autotest.h"
 
 #include <stdio.h>
 #include <errno.h>
@@ -20,7 +21,8 @@
 typedef enum {
 	exit,
 	run_compress,
-	run_decompress
+	run_decompress,
+	run_autotest
 } Mode_e;
 
 typedef enum {
@@ -58,9 +60,10 @@ static void show_menu(void) {
 	printf("\n\n================ МЕНЮ ================");
 
 	printf("\n\nВыберите действие:");
-	printf("\n1. Сжать файл\
-			\n2. Распаковать файл\
-			\n0. Выход");
+	printf("\n1. Сжать файл");
+	printf("\n2. Распаковать файл");
+	printf("\n3.Запуск автотеста");
+	printf("\n0.Выход");
 }
 /*
 	@brief Вывод анализа работы архиватора
@@ -674,6 +677,11 @@ void run_interface_huf(void) {
 
 				break;
 			}
+
+			case run_autotest:
+				// заглушка
+				create_file();
+				break;
 
 			case exit:
 				printf("\nВыход...");
