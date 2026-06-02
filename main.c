@@ -89,6 +89,9 @@ int main(void) {
     // настраиваем локаль на UTF-8 для стандартных функций Си
     setlocale(LC_ALL, ".UTF-8");
 
+    // double выводим через точку (нужно для аналитики в автотесте)
+    setlocale(LC_NUMERIC, "C");
+
     // кроссплатформенность
     #if defined(_WIN32) || defined(_WIN64)
         SetConsoleCP(65001);

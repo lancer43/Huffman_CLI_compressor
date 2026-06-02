@@ -7,7 +7,7 @@
 #include <errno.h>
 
 #define MAX_TEST_FILENAME_LEN		16 // "test" + "<number 0-999>" + '\0' С ЗАПАСОМ
-#define MAX_TEST_FILE_SIZE			(5 * 1024 * 1024)
+#define MAX_TEST_FILE_SIZE			(50 * 1024 * 1024)
 
 #define DECOMPRESS_EXT_INDICATOR	2 // в конец расширения файла будут добавляться "_d" как _decompressed чтобы не перезаписывать исходный файл
 
@@ -15,6 +15,8 @@
 #define NUMBER_OF_TYPES				7 // количество типов для теста из TypeFileContent_e
 
 #define ACCEPTABLE_EXT_CHARS		"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_" // без точки!!!!
+#define AUTOTEST_DIRECTORY			"./autotest_files/"
+#define AUTOTEST_DATA_FILENAME		"autotest_data.csv"
 
 typedef enum {
 	CONTENT_EMPTY,		// пустой файл
@@ -377,17 +379,23 @@ static int create_test_random_content(FILE* stream, size_t file_len, TypeFileCon
 	@brief Создание тестового файла с рандомным содержанием
 	@param number - порядковый номер файла
 	@param type - тип содержания файл
-	@param path - путь (передается наружу для подведения статистики)
+	@param path - путь (передается наружу для работы автотеста)
+	@param extension - расширение файла (передается наружу для подведения статистики) 
 	@return успех - 1, иначе - 0
 */
-static int create_test_random_file(size_t number, size_t file_len, TypeFileContent_e type, char test_path[MAX_PATH_LEN]) {
-	char* test_dir = "./autotest_files/"; // папка для тестовых файлов
+static int create_test_random_file(
+	size_t number, 
+	size_t file_len, 
+	TypeFileContent_e type, 
+	char test_path[MAX_PATH_LEN], 
+	char extension[MAX_EXT_LENGTH]
+) {
+	char* test_dir = AUTOTEST_DIRECTORY; // папка для тестовых файлов
 	char test_filename[MAX_TEST_FILENAME_LEN] = "test";
-	char test_extension[MAX_EXT_LENGTH];
 
 	create_test_filename(test_filename, number);
-	create_test_extension(test_extension);
-	create_test_path(test_path, test_dir, test_filename, test_extension);
+	create_test_extension(extension);
+	create_test_path(test_path, test_dir, test_filename, extension);
 
 	// printf("\n[DEBUG] сформированное расширение: %s", test_extension);
 	// printf("\n[DEBUG] сформированный путь: %s", test_path);
@@ -409,12 +417,14 @@ static int create_test_random_file(size_t number, size_t file_len, TypeFileConte
 	@param source_path - путь к исходному файлу
 	@param compress_path - путь к сжатому файлу
 	@param stats_compress - структура с данными сжатия
+	@param used_syms - количество использованных симолов (передается наружу для подведения статистики)
 	@return успех - 1, иначе - 0
 */
 static int compress_test_file(
 	const char source_path[MAX_PATH_LEN], 
 	const char compress_path[MAX_PATH_LEN], 
-	AlgorithmEfficiency_s* stats_compress
+	AlgorithmEfficiency_s* stats_compress,
+	size_t* used_syms
 ) {
 	FILE* source = fopen(source_path, "rb");
 	FILE* compressed_file = fopen(compress_path, "wb");
@@ -452,6 +462,8 @@ static int compress_test_file(
 		flag = 0;
 		goto cleanup;
 	}
+
+	*used_syms = counting_used_syms(freq_count);
 
 	// [DEBUG] Частоты
 	/*
@@ -645,6 +657,25 @@ cleanup:
 	@return успех - 1, иначе - 0
 */
 int run_autotest_files(void) {
+	char data_path[MAX_PATH_LEN] = { 0 };
+	int written = snprintf(data_path, MAX_PATH_LEN, "%s%s", AUTOTEST_DIRECTORY, AUTOTEST_DATA_FILENAME);
+
+	if (written < 0 || written > MAX_PATH_LEN) {
+		printf("\nОшибка создания файла для записи данных автотеста");
+		return 0;
+	}
+
+	FILE* data_autotest = fopen(data_path, "w");
+	if (!data_autotest) {
+		printf("\nОшибка открытия файла для записи данных автотесты");
+		return 0;
+	}
+
+	int flag = 1;
+	
+	fprintf(data_autotest, "sep=,\n");
+	fprintf(data_autotest, "id,extension,content_type,source_size,compressed_size,freq_time,bincode_time,compress_time,decompress_time,is_identical,unique_symbols\n");
+
 	size_t weight = 0; 
 	size_t idx = 0;
 
@@ -679,15 +710,22 @@ int run_autotest_files(void) {
 			char compress_path[MAX_PATH_LEN] = { 0 };
 			char decompress_path[MAX_PATH_LEN] = { 0 };
 
+			char source_extension[MAX_EXT_LENGTH] = { 0 };
+
 			// создаём файл
-			if (!create_test_random_file(idx, file_len, type, source_path)) {
+			if (!create_test_random_file(idx, file_len, type, source_path, source_extension)) {
 				printf("\nОшибка создания тестового файла");
-				return 0;
+
+				flag = 0;
+				goto cleanup;
 			}
 
 			// создаём путь к сжатому файлу
 			if (!create_test_compress_path(source_path, compress_path)) {
 				printf("\nОшибка создания пути для сжатого файла");
+
+				flag = 0;
+				goto cleanup;
 			}
 
 			AlgorithmEfficiency_s stats_compress = { 0 };
@@ -695,10 +733,14 @@ int run_autotest_files(void) {
 			// printf("\n[DEBUG] source_path: '%s'", source_path);
 			// printf("\n[DEBUG] compress_path: '%s'", compress_path);
 
+			size_t used_syms = 0;
+
 			// сжимаем файл
-			if (!compress_test_file(source_path, compress_path, &stats_compress)) {
+			if (!compress_test_file(source_path, compress_path, &stats_compress, &used_syms)) {
 				printf("\nОшибка сжатия тестового файла");
-				return 0;
+				
+				flag = 0;
+				goto cleanup;
 			}
 
 			// создаём путь для распакованного файла
@@ -709,42 +751,95 @@ int run_autotest_files(void) {
 			// распаковываем файл
 			if (!decompress_test_file(compress_path, decompress_path, &stats_decompress)) {
 				printf("\nОшибка распаковки тестового файла");
-				return 0;
+				
+				flag = 0;
+				goto cleanup;
 			}
+
+			DataAnalytics_s data = { 0 };
+
+			// СБОР ДАННЫХ
+
+
+			/*
+				size_t test_idx;                             // номер теста (idx)
+				char extension[MAX_EXT_LENGTH];              // расширение файла (в формате ".<extension>")
+				TypeFileContent_e content_type;              // тип содержания (enum)
+
+				size_t source_size;                          // размер исходника (байт)
+				size_t compressed_size;                      // размер архива (байт)
+
+				double freq_time;							 // время заполнения массива частот (сек.)
+				double bincode_time;						 // время заполнения таблицы бинарных кодов (сек.)
+				double compress_time;                        // время сжатия (сек.)
+				double decompress_time;                      // время распаковки (сек.)
+
+				int is_identical;                            // результат проверки (0/1)
+				size_t unique_symbols;                       // число уникальных символов в файле (0-256)
+			*/
+			data.test_idx = idx;
+			snprintf(data.extension, MAX_EXT_LENGTH, "%s", source_extension);
+			data.content_type = type;
+
+			data.source_size = stats_compress.in_size;
+			data.compressed_size = stats_compress.out_size;
+
+			data.freq_time = stats_compress.freq_time;
+			data.bincode_time = stats_compress.bincode_time;
+			data.compress_time = stats_compress.compress_time;
+			data.decompress_time = stats_decompress.total_time;
+
+			data.unique_symbols = used_syms;
 
 			if (!compare_test_files(source_path, decompress_path)) {
 				printf("\nОшибка: исходный файл №%zu не совпадает со своей распакованной копией", idx);
 				idx++;
+				data.is_identical = 0;
+
+				flag = 0;
 				continue; // не удаляем файлы для исследования после стресс-теста
 			}
 			printf("\nФайл №%zu успешно прошел тест.", idx);
 
-			// СЮДА ДАННЫЕ
+			data.is_identical = 1;
+
+			fprintf(data_autotest, "%zu,%s,%d,%zu,%zu,%.3lf,%.3lf,%.3lf,%.3lf,%d,%zu\n", 
+				data.test_idx, 
+				data.extension, 
+				data.content_type, 
+				data.source_size, 
+				data.compressed_size, 
+				data.freq_time, 
+				data.bincode_time, 
+				data.compress_time, 
+				data.decompress_time, 
+				data.is_identical, 
+				data.unique_symbols);
 
 			if (remove(source_path)) {
 				perror(source_path);
-				return 0;
+				
+				flag = 0;
+				goto cleanup;
 			}
 			if (remove(compress_path)) {
 				perror(compress_path);
-				return 0;
+				
+				flag = 0;
+				goto cleanup;
 			}
 			if (remove(decompress_path)) {
 				perror(decompress_path);
-				return 0;
+				
+				flag = 0;
+				goto cleanup;
 			}
-			
-			/*
-				+ сжать 
-				+ распаковать
-				сравнить [ща проверим]
-				занести данные в .csv
-				удалить
-			*/
 
 			idx++;
 		}
 	}
 
-	return 1;
+cleanup:
+	if (data_autotest) fclose(data_autotest);
+	return flag;
 }
