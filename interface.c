@@ -5,6 +5,7 @@
 #include "compressor.h"
 #include "decompressor.h"
 #include "autotest.h"
+#include "analytics.h"
 
 #include <stdio.h>
 #include <errno.h>
@@ -14,43 +15,13 @@
 #include <time.h>
 #include <stdlib.h>
 
-
-
 #define COMPRESSED_EXTENSION	".huf"
 #define LEN_COMP_EXT			4
-
-typedef enum {
-	RUN_EXIT,
-	RUN_COMPRESS,
-	RUN_DECOMPRESS,
-	RUN_AUTOTEST
-} Mode_e;
 
 typedef enum {
 	PATH_VALID_NO_EXTENSION,
 	PATH_VALID_WITH_EXTENSION
 } PathStatus_e;
-
-typedef struct {
-	size_t in_size;
-	size_t out_size;
-	
-	double coefficient;
-
-	double total_time;
-	double freq_time;
-	double bincode_time;
-	double compress_time;
-} AlgorithmEfficiency_s;
-
-typedef struct {
-	clock_t start_total;
-	clock_t stop_freq;
-	clock_t start_bincode;
-	clock_t stop_bincode;
-	clock_t start_compress;
-	clock_t stop_total;
-} Clocks_s;
 
 static void greeting_user(void) {
 	printf("========== АРХИВАТОР ЗАПУЩЕН ==========");
@@ -101,58 +72,7 @@ static void show_analysis(AlgorithmEfficiency_s* stats, const Mode_e mode) {
 	}
 }
 
-/*
-	@brief Вычисление коэффициента сжатия файла и времени сжатия/распаковки
-	@param istream - входной файл
-	@param ostream - выходной файл
-	@param clocks - указатель на структуру с замеренными тактами
-	@param mode - режим работы (сжатие/распаковка)
-	@return 1 - успех, иначе - 0
-*/
-static int result_analysis(FILE* istream, FILE* ostream, Clocks_s* clocks, Mode_e mode) {
-	assert(istream != NULL && ostream != NULL && clocks != NULL);
-	assert(mode == RUN_COMPRESS || mode == RUN_DECOMPRESS);
 
-	AlgorithmEfficiency_s stats = { 0 };
-
-	
-	stats.freq_time = (double)(clocks->stop_freq - clocks->start_total) / CLOCKS_PER_SEC;
-	stats.bincode_time = (double)(clocks->stop_bincode - clocks->start_bincode) / CLOCKS_PER_SEC;
-	stats.compress_time = (double)(clocks->stop_total - clocks->start_compress) / CLOCKS_PER_SEC;
-	stats.total_time = stats.freq_time + stats.bincode_time + stats.compress_time;
-
-	if (fseek(istream, 0, SEEK_END)) {
-		perror("Ошибка установления каретки в конечное положение");
-		return 0;
-	}
-	if (fseek(ostream, 0, SEEK_END)) {
-		perror("Ошибка установления каретки в конечное положение");
-		return 0;
-	}
-
-	stats.in_size = ftell(istream);
-	stats.out_size = ftell(ostream);
-
-	if (fseek(istream, 0, SEEK_SET)) {
-		perror("Ошибка установления каретки в начальное положение");
-		return 0;
-	}
-	if (fseek(ostream, 0, SEEK_SET)) {
-		perror("Ошибка установления каретки в начальное положение");
-		return 0;
-	}
-
-	if (mode == RUN_COMPRESS) {
-		stats.coefficient = (double)stats.in_size / stats.out_size;
-	}
-	if (mode == RUN_DECOMPRESS) {
-		stats.coefficient = (double)stats.out_size / stats.in_size;
-	}
-
-	show_analysis(&stats, mode);
-	
-	return 1;
-}
 
 /*
 	@brief Ввод пути файла для сжатия/распаковки
@@ -349,8 +269,13 @@ static void run_compress_file(const char* input_path, const char* output_path, P
 		perror("Ошибка сброса данных на диск");
 		goto cleanup;
 	}
-	if (!result_analysis(source, compressed_file, &clocks, RUN_COMPRESS))
+
+	AlgorithmEfficiency_s stats = { 0 };
+
+	if (!result_analysis(source, compressed_file, &clocks, RUN_COMPRESS, &stats))
 		printf("\nОшибка вывода аналитики");
+
+	show_analysis(&stats, RUN_COMPRESS);
 
 cleanup:
 
@@ -400,8 +325,12 @@ static void run_decompress_file(const char* input_path, const char* output_path)
 		goto cleanup;
 	}
 
-	if (!result_analysis(compressed_file, decompressed_file, &clocks, RUN_DECOMPRESS))
+	AlgorithmEfficiency_s stats = { 0 };
+
+	if (!result_analysis(compressed_file, decompressed_file, &clocks, RUN_DECOMPRESS, &stats))
 		printf("\nОшибка вывода аналитики");
+
+	show_analysis(&stats, RUN_DECOMPRESS);
 
 cleanup:
 

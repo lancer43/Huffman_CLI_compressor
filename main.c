@@ -16,9 +16,11 @@
     interface -> compressor
     interface -> decompressor
     interface -> autotest
+    interface -> analytics
 
     autotest -> compressor
     autotest -> decompressor
+    autotest -> analytics
 
     compressor -> huffman_tree
 

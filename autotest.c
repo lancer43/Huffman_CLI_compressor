@@ -1,43 +1,30 @@
 ﻿#include "autotest.h"
+#include "analytics.h"
 
 #include <stdlib.h>
 #include <assert.h>
 #include <string.h>
 
-#define MAX_TEST_FILENAME_LEN	16 // "test" + "<number 0-999>" + '\0' С ЗАПАСОМ
-#define DECOMPRESS_EXT_INDICATOR 2 // в конец расширения файла будут добавляться "_d" как _decompressed чтобы не перезаписывать исходный файл
-#define ACCEPTABLE_EXT_CHARS	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_" // без точки!!!!
+#define MAX_TEST_FILENAME_LEN		16 // "test" + "<number 0-999>" + '\0' С ЗАПАСОМ
+#define MAX_TEST_FILE_SIZE			(5 * 1024 * 1024)
 
-#define NUMBER_OF_TEST_FILES	100
-#define MAX_TEST_FILE_SIZE		(5 * 1024 * 1024)
-#define NUMBER_OF_TYPES			7 // количество типов для теста из TypeFileContent_e
+#define DECOMPRESS_EXT_INDICATOR	2 // в конец расширения файла будут добавляться "_d" как _decompressed чтобы не перезаписывать исходный файл
 
-// структура для сбора данных в .csv файл для последующей аналитики
-typedef struct {
-	size_t test_idx;                             // номер теста (idx)
-	char extension[MAX_EXT_LENGTH];              // расширение файла (в формате ".<extension>")
-	TypeFileContent_e content_type;              // тип содержания (enum)
+#define NUMBER_OF_TEST_FILES		100
+#define NUMBER_OF_TYPES				7 // количество типов для теста из TypeFileContent_e
 
-	size_t source_size;                          // размер исходника (байт)
-	size_t compressed_size;                      // размер архива (байт)
-	
-	double freq_calc_time;                       // время заполнения массива частот (сек.)
-	double code_table_time;                      // время заполнения таблицы бинарных кодов (сек.)
-	double compress_time;                        // время сжатия (сек.)
-	double decompress_time;                      // время распаковки (сек.)
+#define ACCEPTABLE_EXT_CHARS		"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_" // без точки!!!!
 
-	int is_identical;                            // результат проверки (0/1)
-	size_t unique_symbols;                       // число уникальных символов в файле (0-256)
-} DataAnalytics_s;
+
 
 typedef enum {
-	CONTENT_EMPTY, // пустой файл
-	CONTENT_ONE_BYTE, // файл размером 1 байт
-	CONTENT_MONO_SYM, // файл из одного символа случайной длины
-	CONTENT_TWO_SYMS, // файл случайной длины из двух случайных символов
-	CONTENT_RANDOM, // файл с равномерным распределением символов (длина случайна)
-	CONTENT_UNEVEN, // файл с неравномерным распределением символов
-	CONTENT_ASCII // файл с гарантией использования каждого символа ASCII хотя бы 1 раз (распределение равномерное)
+	CONTENT_EMPTY,		// пустой файл
+	CONTENT_ONE_BYTE,	// файл размером 1 байт
+	CONTENT_MONO_SYM,	// файл из одного символа случайной длины
+	CONTENT_TWO_SYMS,	// файл случайной длины из двух случайных символов
+	CONTENT_RANDOM,		// файл с равномерным распределением символов (длина случайна)
+	CONTENT_UNEVEN,		// файл с неравномерным распределением символов
+	CONTENT_ASCII		// файл с гарантией использования каждого символа ASCII хотя бы 1 раз (распределение равномерное)
 } TypeFileContent_e;
 
 // количество файлов каждого типа в каждой сотне тестовых
@@ -51,15 +38,23 @@ typedef enum {
 	WEIGHT_ASCII = 10
 } TypeWeight_e;
 
-/*
-	========== ФУНКЦИОНАЛ МОДУЛЯ ==========
+// структура для сбора данных в .csv файл для последующей аналитики
+typedef struct {
+	size_t test_idx;                             // номер теста (idx)
+	char extension[MAX_EXT_LENGTH];              // расширение файла (в формате ".<extension>")
+	TypeFileContent_e content_type;              // тип содержания (enum)
 
-	- генерация файлов случайной длины и случайного содержания (случайный формат случайной длины)
-	- сравнение сжатых и распакованных файлов на содержание и формат
-	- замер времени сжатия и распаковки каждого файла и сведение этих данных в .csv файл (+ можно записывать формат файла, массив частот, таблицу кодов, длину файла)
+	size_t source_size;                          // размер исходника (байт)
+	size_t compressed_size;                      // размер архива (байт)
 
+	double freq_time;                       // время заполнения массива частот (сек.)
+	double bincode_time;                      // время заполнения таблицы бинарных кодов (сек.)
+	double compress_time;                        // время сжатия (сек.)
+	double decompress_time;                      // время распаковки (сек.)
 
-*/
+	int is_identical;                            // результат проверки (0/1)
+	size_t unique_symbols;                       // число уникальных символов в файле (0-256)
+} DataAnalytics_s;
 
 /*
 	@brief Создание расширения для тестового файла

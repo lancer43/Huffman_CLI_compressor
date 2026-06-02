@@ -133,9 +133,11 @@
     <ClCompile Include="huffman_tree.c" />
     <ClCompile Include="interface.c" />
     <ClCompile Include="autotest.c" />
+    <ClCompile Include="analytics.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="autotest.h" />
+    <ClInclude Include="analytics.h" />
     <ClInclude Include="interface.h" />
     <ClInclude Include="huffman_tree.h" />
     <ClInclude Include="compressor.h" />
