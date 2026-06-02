@@ -9,6 +9,23 @@
 #endif
 
 /*
+    ======== ТЕКУЩИЕ ЗАВИСИМОСТИ МОДУЛЕЙ ========
+    
+    main -> interface
+
+    interface -> compressor
+    interface -> decompressor
+    interface -> autotest
+
+    autotest -> compressor
+    autotest -> decompressor
+
+    compressor -> huffman_tree
+
+    decompressor -> huffman_tree
+*/
+
+/*
     ========== ТЕКУЩИЕ ЗАДАЧИ =========
 
     СДЕЛАНО!!!!!!!!

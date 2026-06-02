@@ -5,11 +5,30 @@
 #include <string.h>
 
 #define MAX_TEST_FILENAME_LEN	16 // "test" + "<number 0-999>" + '\0' С ЗАПАСОМ
+#define DECOMPRESS_EXT_INDICATOR 2 // в конец расширения файла будут добавляться "_d" как _decompressed чтобы не перезаписывать исходный файл
 #define ACCEPTABLE_EXT_CHARS	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_" // без точки!!!!
 
 #define NUMBER_OF_TEST_FILES	100
 #define MAX_TEST_FILE_SIZE		(5 * 1024 * 1024)
 #define NUMBER_OF_TYPES			7 // количество типов для теста из TypeFileContent_e
+
+// структура для сбора данных в .csv файл для последующей аналитики
+typedef struct {
+	size_t test_idx;                             // номер теста (idx)
+	char extension[MAX_EXT_LENGTH];              // расширение файла (в формате ".<extension>")
+	TypeFileContent_e content_type;              // тип содержания (enum)
+
+	size_t source_size;                          // размер исходника (байт)
+	size_t compressed_size;                      // размер архива (байт)
+	
+	double freq_calc_time;                       // время заполнения массива частот (сек.)
+	double code_table_time;                      // время заполнения таблицы бинарных кодов (сек.)
+	double compress_time;                        // время сжатия (сек.)
+	double decompress_time;                      // время распаковки (сек.)
+
+	int is_identical;                            // результат проверки (0/1)
+	size_t unique_symbols;                       // число уникальных символов в файле (0-256)
+} DataAnalytics_s;
 
 typedef enum {
 	CONTENT_EMPTY, // пустой файл
@@ -49,7 +68,7 @@ typedef enum {
 static void create_test_extension(char extension[MAX_EXT_LENGTH]) {
 	// минимальная длина: 3 символа (например, ".x\0")
 	// максимальная длина: MAX_EXT_LENGTH (32 символа, индексы 0..31)
-	size_t ext_len = 3 + rand() % (MAX_EXT_LENGTH - 3);
+	size_t ext_len = 3 + rand() % (MAX_EXT_LENGTH - 3 - DECOMPRESS_EXT_INDICATOR);
 
 	extension[0] = '.'; 
 
@@ -361,30 +380,10 @@ static int create_test_random_file(size_t number, size_t file_len, TypeFileConte
 	return 1;
 }
 
-
 /*
-	======= ПЛАН =======
-	запускаем автотест
-
-	цикл (NUMBER_OF_TEST_FILES раз) {
-		- создать файл
-		- забить его содержанием (по выбору типа контента) рандомной длины до 50Мб
-		- сжать файл
-		- распаковать файл
-		- проверить файлы на одинаковость
-
-		- занести данные для аналитики в .csv
-
-		- удалить файлы с диска
-	}
-
-
+	@brief Запуск автотеста. 
+	@brief ПРИМЕЧАНИЕ: расширения гарантируются корректными (до 32 символов, всегда существует точка-разделитель)
 */
-
-/*
-		
-*/
-
 int run_autotest_files(void) {
 	size_t weight = 0; 
 	size_t idx = 0;
@@ -418,6 +417,8 @@ int run_autotest_files(void) {
 			char path[MAX_PATH_LEN] = { 0 };
 
 			if (!create_test_random_file(idx, file_len, type, path)) return 0;
+
+
 
 			/*
 				сжать
