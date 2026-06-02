@@ -48,7 +48,8 @@ int compress_file_v1(
 	FILE* ostream,
 	const size_t arr[ASCII_ALP_SIZE],
 	CodeTable* table,
-	char extension[MAX_EXT_LENGTH]
+	char extension[MAX_EXT_LENGTH],
+	const size_t* file_size
 );
 
 #endif

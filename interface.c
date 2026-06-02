@@ -15,8 +15,6 @@
 #include <time.h>
 #include <stdlib.h>
 
-#define COMPRESSED_EXTENSION	".huf"
-#define LEN_COMP_EXT			4
 
 typedef enum {
 	PATH_VALID_NO_EXTENSION,
@@ -214,6 +212,9 @@ static void run_compress_file(const char* input_path, const char* output_path, P
 		goto cleanup;
 	}
 
+	if (fseek(source, 0, SEEK_END)) return 0;
+	size_t file_size = ftell(source);
+
 	printf("\n\nПодсчёт частоты каждого символа...");
 	size_t freq_count[ASCII_ALP_SIZE] = { 0 };
 	
@@ -232,7 +233,9 @@ static void run_compress_file(const char* input_path, const char* output_path, P
 	CodeTable table = { 0 };
 
 	clocks.start_bincode = clock();
-	success = coding_symbols(freq_count, &table);
+	if (file_size != 0) {
+		success = coding_symbols(freq_count, &table);
+	}
 	clocks.stop_bincode = clock();
 	
 	if (!success) {
@@ -249,11 +252,11 @@ static void run_compress_file(const char* input_path, const char* output_path, P
 	if (extension_flag == PATH_VALID_WITH_EXTENSION) {
 		char* ptr = strrchr(input_path, '.');
 		assert(ptr != NULL);
-		strncat(extension, ptr, strlen(ptr));
+		snprintf(extension, strlen(ptr) + 1, "%s", ptr);
 	}
 
 	clocks.start_compress = clock();
-	success = compress_file_v1(source, compressed_file, freq_count, &table, extension);
+	success = compress_file_v1(source, compressed_file, freq_count, &table, extension, &file_size);
 	clocks.stop_total = clock();
 	
 	if (!success) {

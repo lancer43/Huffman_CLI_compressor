@@ -5,7 +5,6 @@
 #include <stdio.h>
 #include <time.h>
 
-
 // режим запуска архиватора через интерфейс
 typedef enum {
 	RUN_EXIT,				// выход из программы

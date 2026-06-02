@@ -10,6 +10,9 @@
 #define READ_BUFFER_SIZE	4096
 #define WRITE_BUFFER_SIZE	4096
 
+#define COMPRESSED_EXTENSION	".huf"	// расширение архива
+#define LEN_COMP_EXT			4		// длина расширения архива
+
 
 typedef struct Node {
 	struct Node* right; // указатель на правый лепесток

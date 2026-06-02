@@ -228,9 +228,14 @@ int decompress_file_v1(
 	size_t file_size = 0;
 	size_t freq_count[ASCII_ALP_SIZE] = { 0 };
 
-	if (read_overhead(istream, NULL, &file_size, freq_count) != 0) {
+	int res;
+	if (res = read_overhead(istream, NULL, &file_size, freq_count) != 0) {
 		return 0;
 	}
+
+	// printf("\n[DEBUG] read_overhead = %d (0 - success)", res);
+
+	if (file_size == 0) return 1;
 
 	// выделяем память под узлы дерева Хаффмана
 	Node* nodes = NULL;

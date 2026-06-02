@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <string.h>
+#include <errno.h>
 
 #define MAX_TEST_FILENAME_LEN		16 // "test" + "<number 0-999>" + '\0' С ЗАПАСОМ
 #define MAX_TEST_FILE_SIZE			(5 * 1024 * 1024)
@@ -14,8 +15,6 @@
 #define NUMBER_OF_TYPES				7 // количество типов для теста из TypeFileContent_e
 
 #define ACCEPTABLE_EXT_CHARS		"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_" // без точки!!!!
-
-
 
 typedef enum {
 	CONTENT_EMPTY,		// пустой файл
@@ -106,6 +105,37 @@ static void create_test_path(
 	const char extension[MAX_EXT_LENGTH]
 ) {
 	snprintf(path, MAX_PATH_LEN, "%s%s%s", directory, filename, extension); // гарантированно помещается
+}
+
+/*
+	@brief Создание пути к тестовому сжатому файлу
+	@param source_path - путь к исходному файлу
+	@param compress_path - путь к сжатому файлу
+	@return успех - 1, иначе - 0
+*/
+static int create_test_compress_path(const char source_path[MAX_PATH_LEN], char compress_path[MAX_PATH_LEN]) {
+	char temp_path[MAX_PATH_LEN] = { 0 };
+
+	int written = snprintf(temp_path, MAX_PATH_LEN, "%s", source_path);
+	if (written < 0 || written > MAX_PATH_LEN) return 0;
+
+	// printf("\n[DEBUG] COPYING temp_path: '%s'", temp_path);
+
+	char* point_ptr = strrchr(temp_path, '.');
+	assert(point_ptr != NULL);
+	*point_ptr = '\0';
+
+	// printf("\n[DEBUG] POINT temp_path: '%s'", temp_path);
+
+	// константами длина вымеряна, вроде проверка не нужна, но место узкое
+	written = snprintf(compress_path, MAX_PATH_LEN, "%s%s", temp_path, COMPRESSED_EXTENSION);
+	if (written < 0 || written > MAX_PATH_LEN) return 0;
+
+	return 1;
+}
+
+static void create_test_decompress_path(const char source_path[MAX_PATH_LEN], char decompress_path[MAX_PATH_LEN]) {
+	snprintf(decompress_path, MAX_PATH_LEN, "%s%s", source_path, "_d"); // [TODO] можно сделать проверку
 }
 
 /*
@@ -359,25 +389,260 @@ static int create_test_random_file(size_t number, size_t file_len, TypeFileConte
 	create_test_extension(test_extension);
 	create_test_path(test_path, test_dir, test_filename, test_extension);
 
-	printf("\n[DEBUG] сформированное расширение: %s", test_extension);
-	printf("\n[DEBUG] сформированный путь: %s", test_path);
+	// printf("\n[DEBUG] сформированное расширение: %s", test_extension);
+	// printf("\n[DEBUG] сформированный путь: %s", test_path);
 
 	FILE* new_file = fopen(test_path, "wb");
 	if (!new_file) {
-		printf("\nОшибка: неудачное создание файла");
 		return 0;
 	}
 
 	// функция генерации рандомного содержания
-	create_test_random_content(new_file, file_len, type);
+	if (!create_test_random_content(new_file, file_len, type)) return 0;
 
 	fclose(new_file);
 	return 1;
 }
 
 /*
+	@brief Сжатие тестового файла с записью аналитики в промежуточную структуру
+	@param source_path - путь к исходному файлу
+	@param compress_path - путь к сжатому файлу
+	@param stats_compress - структура с данными сжатия
+	@return успех - 1, иначе - 0
+*/
+static int compress_test_file(
+	const char source_path[MAX_PATH_LEN], 
+	const char compress_path[MAX_PATH_LEN], 
+	AlgorithmEfficiency_s* stats_compress
+) {
+	FILE* source = fopen(source_path, "rb");
+	FILE* compressed_file = fopen(compress_path, "wb");
+
+	int flag = 1;
+
+	// структура для записи данных о количестве тактов на каждом этапе сжатия
+	Clocks_s clocks = { 0 };
+
+	if (source == NULL) {
+		printf("\n\nОшибка открытия исходного файла (для чтения)");
+		
+		flag = 0;
+		goto cleanup;
+	}
+	if (compressed_file == NULL) {
+		printf("\n\nОшибка открытия сжатого файла (для записи)");
+
+		flag = 0;
+		goto cleanup;
+	}
+
+	if (fseek(source, 0, SEEK_END)) return 0;
+	size_t file_size = ftell(source);
+
+	size_t freq_count[ASCII_ALP_SIZE] = { 0 };
+
+	clocks.start_total = clock();
+	int success = frequency_counting(source, freq_count);
+	clocks.stop_freq = clock();
+
+	if (!success) {
+		printf("\nПодсчет частоты неудачный");
+
+		flag = 0;
+		goto cleanup;
+	}
+
+	// [DEBUG] Частоты
+	/*
+	for (size_t i = 0; i < ASCII_ALP_SIZE; i++) {
+		printf("\n[DEBUG] char number %zu: %zu count", i, freq_count[i]);
+	}
+	*/
+
+	CodeTable table = { 0 };
+
+	
+	// printf("\n[DEBUG] file_size = %zu", file_size);
+
+	clocks.start_bincode = clock();
+	if (file_size != 0) {
+		success = coding_symbols(freq_count, &table);
+	}
+	clocks.stop_bincode = clock();
+
+	if (!success) {
+		printf("\nОшибка заполнения таблицы кодов");
+
+		flag = 0;
+		goto cleanup;
+	}
+
+	// записываем расширение исходного файла для оверхеда
+	char extension[MAX_EXT_LENGTH] = { 0 };
+	char* ptr = strrchr(source_path, '.');
+	assert(ptr != NULL);
+	int written = snprintf(extension, strlen(ptr) + 1, "%s", ptr);
+
+	if (written < 0 || written > strlen(ptr) + 1) {
+		
+		flag = 0;
+		goto cleanup;
+	}
+
+
+	clocks.start_compress = clock();
+	success = compress_file_v1(source, compressed_file, freq_count, &table, extension, &file_size);
+	clocks.stop_total = clock();
+
+	if (!success) {
+		printf("\nОшибка сжатия файла");
+
+		flag = 0;
+		goto cleanup;
+	}
+
+	if (fflush(compressed_file) == EOF) {
+		perror("Ошибка сброса данных на диск");
+
+		flag = 0;
+		goto cleanup;
+	}
+
+	if (!result_analysis(source, compressed_file, &clocks, RUN_COMPRESS, stats_compress)) {
+		printf("\nОшибка вывода аналитики");
+		
+		flag = 0;
+	}
+
+
+cleanup:
+
+	if (source)				fclose(source);
+	if (compressed_file)	fclose(compressed_file);
+
+	return flag;
+}
+
+/*
+	@brief Распаковка тестового файла с записью аналитики в промежуточную структуру
+	@param compress_path - путь к сжатому файлу
+	@param decompress_path - путь к распакованному файлу
+	@param stats_decompress - структура с данными распаковки
+	@return успех - 1, иначе - 0
+*/
+static int decompress_test_file(
+	const char compress_path[MAX_PATH_LEN], 
+	const char decompress_path[MAX_PATH_LEN], 
+	AlgorithmEfficiency_s* stats_decompress
+) {
+	FILE* compressed_file = fopen(compress_path, "rb");
+	FILE* decompressed_file = fopen(decompress_path, "wb");
+
+	int flag = 1;
+
+	Clocks_s clocks = { 0 };
+
+	if (compressed_file == NULL) {
+		printf("\n\nОшибка открытия сжатого файла (для чтения)");
+
+		flag = 0;
+		goto cleanup;
+	}
+	if (decompressed_file == NULL) {
+		printf("\n\nОшибка открытия распакованного файла (для записи).");
+
+		flag = 0;
+		goto cleanup;
+	}
+
+	clocks.start_total = clock();
+	int success = decompress_file_v1(compressed_file, decompressed_file);
+	clocks.stop_total = clock();
+
+	if (!success) {
+		printf("\nОшибка распаковки файла");
+
+		flag = 0;
+		goto cleanup;
+	}
+
+	if (fflush(decompressed_file) == EOF) {
+		perror("Ошибка сброса данных на диск");
+
+		flag = 0;
+		goto cleanup;
+	}
+
+	if (!result_analysis(compressed_file, decompressed_file, &clocks, RUN_DECOMPRESS, stats_decompress)) {
+		printf("\nОшибка вывода аналитики");
+		
+		flag = 0;
+	}
+
+cleanup:
+
+	if (compressed_file)	fclose(compressed_file);
+	if (decompressed_file)	fclose(decompressed_file);
+
+	return flag;
+}
+
+static int compare_test_files(const char source_path[MAX_PATH_LEN], const char decompress_path[MAX_PATH_LEN]) {
+	FILE* source = fopen(source_path, "rb");
+	FILE* decompress_file = fopen(decompress_path, "rb");
+
+	int flag = 1;
+
+	if (!source) {
+		printf("\nОшибка открытия исходного файла");
+
+		flag = 0;
+		goto cleanup;
+	}
+	if (!decompress_file) {
+		printf("\nОшибка открытия распакованного файла");
+
+		flag = 0;
+		goto cleanup;
+	}
+
+	char buf_source[READ_BUFFER_SIZE] = { 0 };
+	char buf_decompress[READ_BUFFER_SIZE] = { 0 };
+
+	size_t count_source = 0;
+	size_t count_decompress = 0;
+
+	while ((count_source = fread(buf_source, sizeof(*buf_source), READ_BUFFER_SIZE, source)) > 0 &&
+		(count_decompress = fread(buf_decompress, sizeof(*buf_decompress), READ_BUFFER_SIZE, decompress_file)) > 0) 
+	{
+		if (count_source != count_decompress) {
+			printf("\nОшибка: размер прочитанных данных не совпадает");
+			
+			flag = 0;
+			goto cleanup;
+		}
+
+		if (memcmp(buf_source, buf_decompress, count_source)) {
+			printf("\nОшибка: данные в исходном и распакованном файлах различны");
+
+			flag = 0;
+			goto cleanup;
+		}
+	}
+
+
+cleanup:
+	if (source)				fclose(source);
+	if (decompress_file)	fclose(decompress_file);
+
+	return flag;
+}
+
+/*
 	@brief Запуск автотеста. 
 	@brief ПРИМЕЧАНИЕ: расширения гарантируются корректными (до 32 символов, всегда существует точка-разделитель)
+	@return успех - 1, иначе - 0
 */
 int run_autotest_files(void) {
 	size_t weight = 0; 
@@ -409,16 +674,70 @@ int run_autotest_files(void) {
 				file_len = create_test_random_file_size();
 			}
 
-			char path[MAX_PATH_LEN] = { 0 };
+			// создаем пути для файлов (исходник, сжатый, распакованный)
+			char source_path[MAX_PATH_LEN] = { 0 };
+			char compress_path[MAX_PATH_LEN] = { 0 };
+			char decompress_path[MAX_PATH_LEN] = { 0 };
 
-			if (!create_test_random_file(idx, file_len, type, path)) return 0;
+			// создаём файл
+			if (!create_test_random_file(idx, file_len, type, source_path)) {
+				printf("\nОшибка создания тестового файла");
+				return 0;
+			}
 
+			// создаём путь к сжатому файлу
+			if (!create_test_compress_path(source_path, compress_path)) {
+				printf("\nОшибка создания пути для сжатого файла");
+			}
 
+			AlgorithmEfficiency_s stats_compress = { 0 };
 
+			// printf("\n[DEBUG] source_path: '%s'", source_path);
+			// printf("\n[DEBUG] compress_path: '%s'", compress_path);
+
+			// сжимаем файл
+			if (!compress_test_file(source_path, compress_path, &stats_compress)) {
+				printf("\nОшибка сжатия тестового файла");
+				return 0;
+			}
+
+			// создаём путь для распакованного файла
+			create_test_decompress_path(source_path, decompress_path);
+
+			AlgorithmEfficiency_s stats_decompress = { 0 };
+
+			// распаковываем файл
+			if (!decompress_test_file(compress_path, decompress_path, &stats_decompress)) {
+				printf("\nОшибка распаковки тестового файла");
+				return 0;
+			}
+
+			if (!compare_test_files(source_path, decompress_path)) {
+				printf("\nОшибка: исходный файл №%zu не совпадает со своей распакованной копией", idx);
+				idx++;
+				continue; // не удаляем файлы для исследования после стресс-теста
+			}
+			printf("\nФайл №%zu успешно прошел тест.", idx);
+
+			// СЮДА ДАННЫЕ
+
+			if (remove(source_path)) {
+				perror(source_path);
+				return 0;
+			}
+			if (remove(compress_path)) {
+				perror(compress_path);
+				return 0;
+			}
+			if (remove(decompress_path)) {
+				perror(decompress_path);
+				return 0;
+			}
+			
 			/*
-				сжать
-				распаковать
-				сравнить
+				+ сжать 
+				+ распаковать
+				сравнить [ща проверим]
 				занести данные в .csv
 				удалить
 			*/

@@ -19,7 +19,7 @@ enum {
 	@return 0 - успешная запись, 1 - неудачная запись расширения, 2 - неудачная запись длины файла, 3 - неудачная запись таблицы частот,
 	-1 - ошибка выставления каретки
 */
-static int write_overhead(FILE* ostream, char extension[MAX_EXT_LENGTH], size_t* file_size, const size_t arr[ASCII_ALP_SIZE]) {
+static int write_overhead(FILE* ostream, char extension[MAX_EXT_LENGTH], const size_t* file_size, const size_t arr[ASCII_ALP_SIZE]) {
 	assert(ostream != NULL && extension != NULL && arr != NULL && file_size != NULL);
 	if (fseek(ostream, 0, SEEK_SET)) {
 		perror("Ошибка установления каретки в начальное положение");
@@ -33,10 +33,6 @@ static int write_overhead(FILE* ostream, char extension[MAX_EXT_LENGTH], size_t*
 	}
 
 	// считаем количество байт файла
-	*file_size = 0;
-	for (size_t i = 0; i < ASCII_ALP_SIZE; i++) {
-		*file_size += arr[i];
-	}
 	if (fwrite(file_size, sizeof(*file_size), 1, ostream) != 1) {
 		perror("Ошибка записи служебной информации в файл");
 		return 2;
@@ -268,7 +264,8 @@ int compress_file_v1(
 	FILE* ostream,
 	const size_t arr[ASCII_ALP_SIZE],
 	CodeTable* table,
-	char extension[MAX_EXT_LENGTH]
+	char extension[MAX_EXT_LENGTH],
+	const size_t* file_size
 ) {
 	if (istream == NULL || ostream == NULL || arr == NULL || table == NULL) 
 		return 0;
@@ -284,14 +281,12 @@ int compress_file_v1(
 	}
 
 	// записываем оверхед
-	size_t file_size = 0;
-
-	if (write_overhead(ostream, extension, &file_size, arr) != 0) {
+	if (write_overhead(ostream, extension, file_size, arr) != 0) {
 		return 0;
 	}
 
 	// заполняем файл сжатым кодом
-	int success = fill_bits(istream, ostream, table, file_size);
+	int success = fill_bits(istream, ostream, table, *file_size);
 
 	if (!success) return 0;
 	
