@@ -1,9 +1,11 @@
 ﻿#include "huffman_tree.h"
 #include "decompressor.h"
+#include "analytics.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <string.h>
 
 enum {
 	bits_in_byte = 8,
@@ -249,4 +251,80 @@ int decompress_file_v1(
 	if (!success) return 0;
 
 	return 1;
+}
+
+int create_decompress_path(
+	const char compress_path[MAX_PATH_LEN], 
+	char decompress_path[MAX_PATH_LEN]
+) {
+	// узнаем расширение исходного файла
+	FILE* file = fopen(compress_path, "rb");
+	if (!file) return 0;
+
+	char source_extension[MAX_EXT_LENGTH] = { 0 };
+	if (read_overhead(file, source_extension, NULL, NULL) != 0) {
+		fclose(file);
+		return 0;
+	}
+	fclose(file);
+
+	// копируем путь исходного файла во временную строку
+	char temp_path[MAX_PATH_LEN] = { 0 };
+	int written = snprintf(temp_path, MAX_PATH_LEN, "%s", compress_path);
+
+	if (written < 0 || written > MAX_PATH_LEN) return 0;
+
+	// удаляем старое расширение файла (.huf - т.е. точка после имени сжатого файла гарантируется)
+	char* point = strrchr(temp_path, '.');
+	assert(point != NULL);
+	*point = '\0';
+	
+
+	// склеиваем строки - путь в точности до директории + имя файла + расширение
+	written = snprintf(decompress_path, MAX_PATH_LEN, "%s%s", temp_path, source_extension);
+
+	if (written < 0 || written > MAX_PATH_LEN) return 0;
+
+	return 1;
+}
+
+int run_decompress(
+	const char compress_path[MAX_PATH_LEN],
+	const char decompress_path[MAX_PATH_LEN],
+	AlgorithmEfficiency_s* stats_decompress
+) {
+	// открываем файлы
+	FILE* compressed_file = fopen(compress_path, "rb");
+	FILE* decompressed_file = fopen(decompress_path, "wb");
+
+	if (!compressed_file) goto cleanup;
+	if (!decompressed_file) goto cleanup;
+
+	// вспомогательная структура для хранения информации о тактах на всех этапах работы фукнции
+	Clocks_s clocks = { 0 };
+
+	// сжимаем файл
+	clocks.start_total = clock();
+	int success = decompress_file_v1(compressed_file, decompressed_file);
+	clocks.stop_total = clock();
+
+	if (!success) goto cleanup;
+
+	// сброс остатков на диск
+	if (fflush(decompressed_file) == EOF) goto cleanup;
+
+	// сбор данных для аналитики (необходимо для интерфейса и для автотеста)
+	if (!result_analysis(compressed_file, decompressed_file, &clocks, RUN_DECOMPRESS, stats_decompress)) goto cleanup;
+
+	fclose(compressed_file);
+	fclose(decompressed_file);
+
+	return 1;
+
+cleanup:
+
+	if (compressed_file)				fclose(compressed_file);
+	if (decompressed_file)	fclose(decompressed_file);
+
+	return 0;
 }

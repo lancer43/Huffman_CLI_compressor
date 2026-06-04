@@ -5,7 +5,6 @@
 #include "compressor.h"
 #include "decompressor.h"
 #include "autotest.h"
-#include "analytics.h"
 
 #include <stdio.h>
 #include <errno.h>
@@ -16,10 +15,7 @@
 #include <stdlib.h>
 
 
-typedef enum {
-	PATH_VALID_NO_EXTENSION,
-	PATH_VALID_WITH_EXTENSION
-} PathStatus_e;
+
 
 static void greeting_user(void) {
 	printf("========== АРХИВАТОР ЗАПУЩЕН ==========");
@@ -190,158 +186,6 @@ static PathStatus_e enter_path(char input_path[MAX_PATH_LEN]) {
 }
 
 /*
-	@brief Функция полного цикла сжатия файла
-	@param input_path - путь сжимаемого файла
-	@param output_path - путь сжатого файла
-*/
-static void run_compress_file(const char* input_path, const char* output_path, PathStatus_e extension_flag) {
-	FILE* source = fopen(input_path, "rb");
-	FILE* compressed_file = fopen(output_path, "wb");
-
-	// структура для записи данных о количестве тактов на каждом этапе сжатия
-	Clocks_s clocks = { 0 };
-
-	if (source == NULL) {
-		printf("\n\nОшибка открытия исходного файла (для чтения)");
-		
-		goto cleanup;
-	}
-	if (compressed_file == NULL) {
-		printf("\n\nОшибка открытия сжатого файла (для записи)");
-		
-		goto cleanup;
-	}
-
-	if (fseek(source, 0, SEEK_END)) return 0;
-	size_t file_size = ftell(source);
-
-	printf("\n\nПодсчёт частоты каждого символа...");
-	size_t freq_count[ASCII_ALP_SIZE] = { 0 };
-	
-	clocks.start_total = clock();
-	int success = frequency_counting(source, freq_count);
-	clocks.stop_freq = clock();
-	
-	if (!success) {
-		printf("\nПодсчет частоты неудачный");
-		
-		goto cleanup;
-	}
-	printf("\nЧастота посчитана успешно!");
-
-	printf("\n\nЗаполняем таблицу бинарных кодов для сжатия...");
-	CodeTable table = { 0 };
-
-	clocks.start_bincode = clock();
-	if (file_size != 0) {
-		success = coding_symbols(freq_count, &table);
-	}
-	clocks.stop_bincode = clock();
-	
-	if (!success) {
-		printf("\nОшибка заполнения таблицы кодов");
-
-		goto cleanup;
-	}
-	printf("\nТаблица кодов успешно заполнена!");
-
-	printf("\n\nСжимаем файл...");
-
-	// записываем расширение исходного файла для оверхеда
-	char extension[MAX_EXT_LENGTH] = { 0 };
-	if (extension_flag == PATH_VALID_WITH_EXTENSION) {
-		char* ptr = strrchr(input_path, '.');
-		assert(ptr != NULL);
-		snprintf(extension, strlen(ptr) + 1, "%s", ptr);
-	}
-
-	clocks.start_compress = clock();
-	success = compress_file_v1(source, compressed_file, freq_count, &table, extension, &file_size);
-	clocks.stop_total = clock();
-	
-	if (!success) {
-		printf("\nОшибка сжатия файла");
-		
-		goto cleanup;
-	}
-	printf("\nФайл сжат успешно!");
-	
-	printf("\n\nСжатый файл лежит по пути: '%s'", output_path);
-
-	if (fflush(compressed_file) == EOF) {
-		perror("Ошибка сброса данных на диск");
-		goto cleanup;
-	}
-
-	AlgorithmEfficiency_s stats = { 0 };
-
-	if (!result_analysis(source, compressed_file, &clocks, RUN_COMPRESS, &stats))
-		printf("\nОшибка вывода аналитики");
-
-	show_analysis(&stats, RUN_COMPRESS);
-
-cleanup:
-
-	if (source)				fclose(source);
-	if (compressed_file)	fclose(compressed_file);
-}
-
-/*
-	@brief Функция полного цикла распаковки файла
-	@param input_path - путь сжимаемого файла
-	@param output_path - путь сжатого файла
-*/
-static void run_decompress_file(const char* input_path, const char* output_path) {
-	FILE* compressed_file = fopen(input_path, "rb");
-	FILE* decompressed_file = fopen(output_path, "wb");
-
-	Clocks_s clocks = { 0 };
-
-	if (compressed_file == NULL) {
-		printf("\n\nОшибка открытия сжатого файла (для чтения)");
-		
-		goto cleanup;
-	}
-	if (decompressed_file == NULL) {
-		printf("\n\nОшибка открытия распакованного файла (для записи).");
-		
-		goto cleanup;
-	}
-
-	printf("\n\nРаспаковываем файл...");
-
-	clocks.start_total = clock();
-	int success = decompress_file_v1(compressed_file, decompressed_file);
-	clocks.stop_total = clock();
-
-	if (!success) {
-		printf("\nОшибка распаковки файла");
-		
-		goto cleanup;
-	}
-
-	printf("\nФайл распакован успешно!");
-	printf("\n\nРаспакованный файл лежит по пути: %s", output_path);
-
-	if (fflush(decompressed_file) == EOF) {
-		perror("Ошибка сброса данных на диск");
-		goto cleanup;
-	}
-
-	AlgorithmEfficiency_s stats = { 0 };
-
-	if (!result_analysis(compressed_file, decompressed_file, &clocks, RUN_DECOMPRESS, &stats))
-		printf("\nОшибка вывода аналитики");
-
-	show_analysis(&stats, RUN_DECOMPRESS);
-
-cleanup:
-
-	if (compressed_file)	fclose(compressed_file);
-	if (decompressed_file)	fclose(decompressed_file);
-}
-
-/*
 	@brief Перезапись имени файла
 	@param path - путь к файлу
 	@param extension_flag - флаг о наличии расширения файла (есть/нет)
@@ -421,7 +265,7 @@ static void rewrite_file_name(char* path) {
 	@param path - путь
 	@return 1 - проблема решена, 0 - отмена выполнения
 */
-static int check_existence_file(char* path, PathStatus_e extension_flag) {
+static int check_existence_file(char* path, PathStatus_e extension_flag) { // [TODO] зациклить при повторно неверном вводе
 	FILE* test_file = fopen(path, "rb");
 
 	// если файл не открылся — значит его нет, путь свободен для записи
@@ -478,90 +322,75 @@ static int check_existence_file(char* path, PathStatus_e extension_flag) {
 }
 
 /*
-	@brief Функция создания пути для сжатого файла и его сжатие
-	@param input_path - путь исходного файла
+	@brief Интерфейс сжатия файла.
+	@brief Вызывается ввод пути к исходному файлу от пользователя, автоматически формируется путь для сжатого файла,
+	запускается цикл сжатия файла, выводится аналитика (время каждой стадии цикла сжатия, размеры файлов, коэффициент сжатия).
+	@brief [ПРИМЕЧАНИЕ] Если путь для сжатого файла занят, то пользователю предоставляется возможность выбрать действие с путём.
 */
-static void compress_interface(const char* input_path, PathStatus_e extension_flag) {
-	// на вход подаётся корректный путь к файлу (гарантируется enter_path())
+static void compress_interface(void) {
+	// ввод пути к исходному файлу
+	char source_path[MAX_PATH_LEN];
+	int extension_flag = enter_path(source_path); // узнаем есть ли у него расширение
 
 	// создаём путь для записи сжатого файла
-	char output_path[MAX_PATH_LEN];
-	snprintf(output_path, sizeof(output_path), "%s", input_path); // проверка не требуется - строки одинаковой длины гарантированно
-
-	// если расширение у файла было, то удаляем его
-	if (extension_flag == PATH_VALID_WITH_EXTENSION) {
-		char* point = strrchr(output_path, '.');
-		*point = '\0';
-	}
-
-	// проверяем хватит ли места на формат + символ '\0'
-	if (strlen(output_path) + LEN_COMP_EXT + 1 > MAX_PATH_LEN) {
-		printf("\nОшибка: путь к файлу слишком длинный.");
-		return;
-	}
-
-	// добавляем формат архиватора
-	strncat(output_path, COMPRESSED_EXTENSION, LEN_COMP_EXT);
+	char compress_path[MAX_PATH_LEN];
+	create_compress_path(source_path, compress_path, extension_flag);
 
 	// проверяем существует ли такой сжатый файл и надо ли его перезаписать
-	if (!check_existence_file(output_path, extension_flag)) return;
+	if (!check_existence_file(compress_path, extension_flag)) return;
 	
-	// тут щас будем выделять память, таблицу все дела пупупу
-	run_compress_file(input_path, output_path, extension_flag);
+	// выделяем структуру под данные для аналитики
+	AlgorithmEfficiency_s stats_compress = { 0 };
+
+	// запускаем цикл сжатия файла
+	run_compress(source_path, compress_path, &stats_compress, extension_flag);
+
+	// выводим аналитику на экран
+	show_analysis(&stats_compress, RUN_COMPRESS);
 }
 
 /*
-	@brief Функция создания пути для распакованного файла и его распаковка
-	@param input_path - путь сжатого файла
+	@brief Интерфейс распаковки файла.
+	@brief Вызывается ввод пути к сжатому файлу от пользователя, автоматически формируется путь для распакованного файла,
+	запускается цикл распаковки файла, выводится аналитика (время цикла распаковки, размеры файлов, коэффициент сжатия).
+	@brief [ПРИМЕЧАНИЕ] Если путь для распакованного файла занят, то пользователю предоставляется возможность выбрать действие с путём.
 */
-static void decompress_interface(const char* input_path) {
-	// на вход подаётся корректный путь к файлу (гарантируется enter_path())
-	
+static void decompress_interface(void) {
+	// ввод пути к сжатому файлу
+	char compress_path[MAX_PATH_LEN];
+	enter_path(compress_path);
+
 	// проверка на нужный формат
-	char* point = strrchr(input_path, '.');
+	char* point = strrchr(compress_path, '.');
 	if (point == NULL || strcmp(point, COMPRESSED_EXTENSION) != 0) {
 		printf("\nОшибка: неверный формат файла.");
 		return;
 	}
 	point = NULL;
-	
-	// узнаем расширение файла
-	FILE* file = fopen(input_path, "rb");
-	if (!file) {
-		printf("Ошибка открытия файла для чтения служебной информации.");
-		return;
-	}
 
-	char extension[MAX_EXT_LENGTH] = { 0 };
-	if (read_overhead(file, extension, NULL, NULL) != 0) {
-		printf("Ошибка чтения расширения исходного файла.");
-		fclose(file);
-		return;
-	}
-	fclose(file);
+	// создаем путь для записи распакованного файла
+	char decompress_path[MAX_PATH_LEN];
+	create_decompress_path(compress_path, decompress_path);
 
-	// формируем выходной путь
-	char output_path[MAX_PATH_LEN];
-	snprintf(output_path, sizeof(output_path), "%s", input_path); // проверка не требуется - строки одинаковой длины гарантированно
+	// проверяем существует ли такой распакованный файл и надо ли его перезаписать
+	if (!check_existence_file(decompress_path, PATH_VALID_WITH_EXTENSION)) return;
 
-	// убираем формат с точкой
-	point = strrchr(output_path, '.');
-	assert(point != NULL);
-	*point = '\0';
-	
-	// проверка длины
-	size_t ext_len = strlen(extension);
-	if (strlen(output_path) + ext_len + 1 > MAX_PATH_LEN) {
-		printf("\nОшибка: путь слишком длинный");
-		return;
-	}
+	// выделяем структуру под данные для аналитики
+	AlgorithmEfficiency_s stats_decompress = { 0 };
 
-	strncat(output_path, extension, ext_len);
+	// запускаем цикл сжатия файла
+	run_decompress(compress_path, decompress_path, &stats_decompress);
+
+	// выводим аналитику на экран
+	show_analysis(&stats_decompress, RUN_DECOMPRESS);
+}
+
+static void autotest_interface() {
 
 
-	if (!check_existence_file(output_path, PATH_VALID_WITH_EXTENSION)) return;
 
-	run_decompress_file(input_path, output_path);
+
+	run_autotest();
 }
 
 
@@ -592,21 +421,17 @@ void run_interface_huf(void) {
 		switch (choice) {
 		
 			case RUN_COMPRESS: {
-				char path[MAX_PATH_LEN];
-			
-				int extension_flag = enter_path(path);
+				
 
-				compress_interface(path, extension_flag);
+				compress_interface();
 
 				break;
 			}
 
 			case RUN_DECOMPRESS: {
-				char path[MAX_PATH_LEN];
+				
 
-				enter_path(path);
-
-				decompress_interface(path);
+				decompress_interface();
 
 				break;
 			}
@@ -614,7 +439,7 @@ void run_interface_huf(void) {
 			case RUN_AUTOTEST:
 				// заглушка
 				srand(time(NULL));
-				run_autotest_files();
+				autotest_interface();
 				break;
 
 			case RUN_EXIT:

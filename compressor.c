@@ -1,4 +1,5 @@
 ﻿#include "huffman_tree.h"
+#include "analytics.h"
 #include "compressor.h"
 
 #include <stdio.h>
@@ -259,7 +260,16 @@ static int fill_bits(
 	return 1;
 }
 
-int compress_file_v1(
+/*
+	@brief Сжатие файла. Версия с оверхедом из массива частот
+	@param istream - указатель на исходный файл (необходим режим "rb")
+	@param ostream - указатель на файл для записи (необходим режим "wb")
+	@param arr - указатель на массив частот
+	@param table - указатель на таблицу для кодирования
+	@param extension - строка с расширением (для оверхеда)
+	@return успех - 1, иначе - 0
+*/
+static int compress_file_v1(
 	FILE* istream,
 	FILE* ostream,
 	const size_t arr[ASCII_ALP_SIZE],
@@ -291,4 +301,112 @@ int compress_file_v1(
 	if (!success) return 0;
 	
 	return 1;
+}
+
+int get_extension(const char source_path[MAX_PATH_LEN], char extension[MAX_EXT_LENGTH]) {
+	char* ptr = strrchr(source_path, '.');
+	
+	if (ptr == NULL) {
+		return 0;
+	}
+
+	int written = snprintf(extension, strlen(ptr) + 1, "%s", ptr);
+
+	if (written < 0 || written > strlen(ptr) + 1) {
+		return 0;
+	}
+
+	return 1;
+}
+
+int create_compress_path(const char source_path[MAX_PATH_LEN], char compress_path[MAX_PATH_LEN], PathStatus_e ext_flag) {
+	// копируем путь исходного файла во временную строку
+	char temp_path[MAX_PATH_LEN] = { 0 };
+	int written = snprintf(temp_path, MAX_PATH_LEN, "%s", source_path);
+
+	if (written < 0 || written > MAX_PATH_LEN) return 0;
+
+	// если расширение у файла было, то удаляем его (т.е. точка после имени файла гаратирована)
+	if (ext_flag == PATH_VALID_WITH_EXTENSION) {
+		char* point = strrchr(temp_path, '.');
+		assert(point != NULL);
+		*point = '\0';
+	}
+
+	// склеиваем строки 
+	written = snprintf(compress_path, MAX_PATH_LEN, "%s%s", temp_path, COMPRESSED_EXTENSION);
+
+	if (written < 0 || written > MAX_PATH_LEN) return 0;
+
+	return 1;
+}
+
+int run_compress(
+	const char source_path[MAX_PATH_LEN], 
+	const char compress_path[MAX_PATH_LEN],
+	AlgorithmEfficiency_s* stats_compress,
+	PathStatus_e extension_flag
+) {
+	// открываем файлы
+	FILE* source = fopen(source_path, "rb");
+	FILE* compressed_file = fopen(compress_path, "wb");
+
+	if (!source) goto cleanup;
+	if (!compressed_file) goto cleanup;
+	
+	// вспомогательная структура для хранения информации о тактах на всех этапах работы фукнции
+	Clocks_s clocks = { 0 };
+
+	// узнаем размер файла
+	if (fseek(source, 0, SEEK_END)) goto cleanup;
+	size_t file_size = ftell(source);
+
+	// узнаем расширение файла
+	char extension[MAX_EXT_LENGTH] = { 0 };
+	if (extension_flag == PATH_VALID_WITH_EXTENSION)
+		if (!get_extension(source_path, extension)) goto cleanup;
+
+	// подсчет массива частот
+	size_t freq_count[ASCII_ALP_SIZE] = { 0 };
+	
+	clocks.start_total = clock();
+	int success = frequency_counting(source, freq_count);
+	clocks.stop_freq = clock();
+
+	if (!success) goto cleanup;
+
+	// таблица бинарных кодов
+	CodeTable table = { 0 };
+
+	clocks.start_bincode = clock();
+	if (file_size != 0) {
+		success = coding_symbols(freq_count, &table);
+		if (!success) goto cleanup;
+	}
+	clocks.stop_bincode = clock();
+
+	// заполнение оверхеда и сжатие содержимого
+	clocks.start_compress = clock();
+	success = compress_file_v1(source, compressed_file, freq_count, &table, extension, &file_size);
+	clocks.stop_total = clock();
+
+	if (!success) goto cleanup;
+
+	// сброс остатков на диск
+	if (fflush(compressed_file) == EOF) goto cleanup;
+
+	// сбор данных для аналитики (необходимо для интерфейса и для автотеста)
+	if (!result_analysis(source, compressed_file, &clocks, RUN_COMPRESS, stats_compress)) goto cleanup;
+
+	fclose(source);
+	fclose(compressed_file);
+
+	return 1;
+
+cleanup:
+
+	if (source)				fclose(source);
+	if (compressed_file)	fclose(compressed_file);
+
+	return 0;
 }

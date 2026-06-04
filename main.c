@@ -16,15 +16,15 @@
     interface -> compressor
     interface -> decompressor
     interface -> autotest
-    interface -> analytics
 
     autotest -> compressor
     autotest -> decompressor
-    autotest -> analytics
 
     compressor -> huffman_tree
+    compressor -> analytics
 
     decompressor -> huffman_tree
+    decompressor -> analytics
 */
 
 /*
@@ -60,12 +60,15 @@
     СДЕЛАНО!!!!!!!
     - заменить все fgetc() и fputc() на современные fread() и fwrite() (Ctrl + F [SEARCH])
 
-    
+    СДЕЛАНО!!!!!!!
     - запустить тест упаковки и распаковки 50-100 рандомных файлов с ПК с проверкой (а может это функция interface.c ?
     типо введите 3 для теста на соответствие исходник == распакованный по файлам в папке
 
     СДЕЛАНО!!!!!!!
     - проверить проект на переносимость и полностью отказаться от windows инструментов
+
+    - сделать функцию-организатор для соединения всех этапов compress и decompress (добавь callback чтобы функцию 
+    можно было юзать и в интерфейсе и в автотесте
 
     - настроить CMake зависимости и дропнуть релиз на все платформы 
 
