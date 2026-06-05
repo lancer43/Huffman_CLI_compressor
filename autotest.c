@@ -4,6 +4,7 @@
 #include <assert.h>
 #include <string.h>
 #include <errno.h>
+#include <stdint.h>
 
 #define MAX_TEST_FILENAME_LEN		16 // "test" + "<number 0-999>" + '\0' С ЗАПАСОМ
 #define MAX_TEST_FILE_SIZE			(50 * 1024 * 1024)
@@ -215,15 +216,24 @@ static int generate_two_syms(FILE* stream, const size_t file_len) {
 	char rand_sym1 = rand() % ASCII_ALP_SIZE; // 1 символ для заполнения
 	char rand_sym2 = rand() % ASCII_ALP_SIZE; // 2 символ для заполнения
 
+	static uint64_t xorshift = 0;
+	if (xorshift == 0) xorshift += (uint64_t)time(NULL);
+
 	// --- формируем рандомную последовательность из двух символов на весь стековый буфер ---
 	// мы будем копировать её пока не забъем файл нужным количеством байт
 	// объективность теста сохраняется, т.к. алгоритм Хаффмана читает по 1 байту и ему 
 	// плевать на закономерно повторяющуюся последовательность
 	// мы точно так же "рандомно" формируем распределение символов в рамках стекового буфера
+
+	// сначала делаем псевдослучайное 64 битное число, потом отщипываем от него по 1 биту и заполняем буфер
 	for (size_t i = 0; i < WRITE_BUFFER_SIZE; i++) {
-		
-		// [TODO] чтобы не вызывать 4096 раз функцию rand() можно упаковывать рандом пачками по 32 или 64 бита через >> <<
-		buf[i] = (rand() % 2) ? rand_sym1 : rand_sym2;
+		if (i % 64 == 0) {
+			xorshift ^= xorshift << 13;
+			xorshift ^= xorshift >> 17;
+			xorshift ^= xorshift << 5;
+		}
+
+		buf[i] = ((xorshift >> (i % 64)) & 1) ? rand_sym1 : rand_sym2;
 	}
 
 	if (!fill_file(stream, file_len, buf)) {
@@ -242,10 +252,25 @@ static int generate_two_syms(FILE* stream, const size_t file_len) {
 */
 static int generate_random_content(FILE* stream, const size_t file_len) {
 	char buf[WRITE_BUFFER_SIZE]; // стековый буфер
+	
+	// псевдослучайное число для быстрого заполнения буфера
+	static uint64_t xorshift = 0;
+	if (xorshift == 0) xorshift += (uint64_t)time(NULL);
 
-	for (size_t i = 0; i < WRITE_BUFFER_SIZE; i++) {
-		// [TODO] чтобы не вызывать 4096 раз функцию rand() можно упаковывать рандом пачками по 32 или 64 бита через >> <<
-		buf[i] = rand() % ASCII_ALP_SIZE;
+	for (size_t i = 0; i < WRITE_BUFFER_SIZE; i += 8) {
+
+		xorshift ^= xorshift << 13;
+		xorshift ^= xorshift >> 17;
+		xorshift ^= xorshift << 5;
+		
+		buf[i] = (char)(xorshift & 255);
+		buf[i + 1] = (char)((xorshift >> 8) & 255);
+		buf[i + 2] = (char)((xorshift >> 16) & 255);
+		buf[i + 3] = (char)((xorshift >> 24) & 255);
+		buf[i + 4] = (char)((xorshift >> 32) & 255);
+		buf[i + 5] = (char)((xorshift >> 40) & 255);
+		buf[i + 6] = (char)((xorshift >> 48) & 255);
+		buf[i + 7] = (char)((xorshift >> 56) & 255);
 	}
 
 	if (!fill_file(stream, file_len, buf)) {
@@ -265,16 +290,25 @@ static int generate_random_content(FILE* stream, const size_t file_len) {
 static int generate_uneven_content(FILE* stream, const size_t file_len) {
 	char buf[WRITE_BUFFER_SIZE]; // стековый буфер
 
-	size_t n = (rand() % 9) + 2; // шаг с которым будем вставлять "особый" символ, который чаще всего повторяется
+	size_t n = (rand() % 7) + 2; // шаг с которым будем вставлять "особый" символ, который чаще всего повторяется (2-8)
 	char special_sym = (char)(rand() % ASCII_ALP_SIZE); // особый символ
 
+
+	static uint64_t xorshift = 0;
+	if (xorshift == 0) xorshift += (uint64_t)time(NULL);
+
 	for (size_t i = 0; i < WRITE_BUFFER_SIZE; i++) {
+
+		if (i % 8 == 0) {
+			xorshift ^= xorshift << 13;
+			xorshift ^= xorshift >> 17;
+			xorshift ^= xorshift << 5;
+		}
+
 		if (i % n == 0) {
 			buf[i] = special_sym;
-		}
-		else {
-			// [TODO] чтобы не вызывать 4096 раз функцию rand() можно упаковывать рандом пачками по 32 или 64 бита через >> <<
-			buf[i] = (char)(rand() % ASCII_ALP_SIZE);
+		} else {
+			buf[i] = (char)((xorshift >> ((i % 8) * 8)) & 255);
 		}
 	}
 

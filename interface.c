@@ -261,64 +261,56 @@ static void rewrite_file_name(char* path) {
 }
 
 /*
-	@brief Проверка существования файла по заданному пути
-	@param path - путь
-	@return 1 - проблема решена, 0 - отмена выполнения
+	@brief Проверка существования файла по заданному пути. При совпадении имен
+	запрашивает у пользователя действие (перезапись, отмена, переименование).
+	@param path - буфер с исходным путем (может быть изменен при 'r')
+	@param extension_flag - флаг валидации расширения
+	@return 1 - можно перезаписать / файл не существует (путь свободен), 0 - отмена выполнения
 */
-static int check_existence_file(char* path, PathStatus_e extension_flag) { // [TODO] зациклить при повторно неверном вводе
-	FILE* test_file = fopen(path, "rb");
-
-	// если файл не открылся — значит его нет, путь свободен для записи
-	if (test_file == NULL) {
-		return 1;
-	}
-	fclose(test_file);
-
-	printf("\nСжатый файл с таким именем уже существует. Хотите перезаписать его?\n");
-	printf("[y - перезаписать/n - отменить/r - изменить имя файла]: ");
-
-	int choice = -1;
-	int flag = 0;
-	int res = 0; // возвращаемое значение
+static int check_existence_file(char path[MAX_PATH_LEN], PathStatus_e extension_flag) {
 	int c; // переменная для очистки буфера
 
-	while (!flag) {
-		choice = getchar();
+	while (1) {
+		FILE* test_file = fopen(path, "rb");
+
+		// Если файл не открылся — значит его нет, путь свободен для записи
+		if (test_file == NULL) {
+			return 1;
+		}
+		fclose(test_file);
+
+		// Если мы здесь — файл существует. Запрашиваем действие
+		printf("\nСжатый файл с именем \"%s\" уже существует. Хотите перезаписать его?\n", path);
+		printf("[y - перезаписать / n - отменить / r - изменить имя файла]: ");
+
+		int choice = getchar();
+
+		// Чистим буфер от '\n' и любого мусора, который пользователь мог ввести случайно после символа
+		while ((c = getchar()) != '\n' && c != EOF);
 
 		switch (choice) {
-		case 'y':
-		case 'Y':
-			flag = 1;
-			res = 1;
-			// чистим буфер от оставшегося '\n'
-			while ((c = getchar()) != '\n' && c != EOF);
-			break;
-		case 'n':
-		case 'N':
-			flag = 1;
-			res = 0;
-			// чистим буфер от оставшегося '\n'
-			while ((c = getchar()) != '\n' && c != EOF);
-			break;
-		case 'r':
-		case 'R':
-			// чистим буфер от оставшегося '\n'
-			while ((c = getchar()) != '\n' && c != EOF);
+			case 'y':
+			case 'Y':
+				return 1; // подтвердили перезапись, выходим с успехом
 
-			rewrite_file_name(path);
-			flag = 1;
-			res = 1;
-			break;
-		default:
-			printf("\nНекорректный ввод. Повторите попытку: ");
-			
-			// чистим буфер от оставшегося '\n'
-			while ((c = getchar()) != '\n' && c != EOF);
-			break;
+			case 'n':
+			case 'N':
+				return 0; // отменили операцию, выходим с отказом
+
+			case 'r':
+			case 'R':
+				// передаем max_path_len для безопасного ввода внутри rewrite_file_name
+				rewrite_file_name(path);
+
+				// просто уходим на следующую итерацию while(1). 
+				// она сама откроет файл по новому пути, проверит его и при необходимости выведет вопрос о повторной перезаписи
+				break;
+
+			default:
+				printf("\nНекорректный ввод. Пожалуйста, выберите y, n или r.\n");
+				break;
 		}
 	}
-
-	return res;
 }
 
 /*
